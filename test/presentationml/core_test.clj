@@ -6,7 +6,11 @@
 
 (deftest renders-slide-and-presentation
   (is (str/includes? (pml/slide-xml (pml/slide "<p:sp/>")) "<p:sp/>"))
-  (is (str/includes? (pml/presentation-xml 1 {:width 1280 :height 720}) "<p:sldId id=\"256\"")))
+  (is (str/includes? (pml/slide-xml (pml/slide {:name "ignored"} "<p:sp/>")) "<p:sp/>"))
+  (is (str/includes? (pml/presentation-xml 1 {:width 1280 :height 720}) "<p:sldId id=\"256\""))
+  (is (str/includes? (pml/presentation-xml 0 {}) "<p:sldIdLst></p:sldIdLst>"))
+  (is (str/includes? (pml/relationships-xml []) "<Relationships"))
+  (is (str/includes? (pml/content-types-xml 0) "presentation.xml")))
 
 (deftest builds-package-map
   (let [pkg (pml/package-map {:slides [(pml/slide "<p:sp/>")]})]
@@ -14,7 +18,11 @@
     (is (contains? pkg "ppt/slides/slide1.xml"))
     (is (str/includes? (get pkg "ppt/_rels/presentation.xml.rels") "slide1.xml"))
     (is (pml/valid-slide? (pml/slide "<p:sp/>")))
-    (is (pml/valid-package-map? pkg))))
+    (is (pml/valid-package-map? pkg))
+    (is (not (pml/valid-slide? {:presentationml/type :other :body "<p:sp/>"})))
+    (is (not (pml/valid-slide? {:presentationml/type :slide :body nil})))
+    (is (not (pml/valid-package-map? {})))
+    (is (not (pml/valid-package-map? (assoc pkg "ppt/slides/slide1.xml" nil))))))
 
 (deftest parses-package-fixture
   (let [entries {"docProps/core.xml" "<cp:coreProperties><dc:title>Fixture deck</dc:title></cp:coreProperties>"
@@ -41,3 +49,31 @@
     (is (parse/valid-deck? deck))
     (is (= "Generated text"
            (-> deck :presentationml/slides first :presentationml/shapes first :drawingml/text)))))
+
+(deftest parses-defaults-and-edge-cases
+  (is (= {:presentationml/width 10.0 :presentationml/height 5.625}
+         (parse/slide-size nil)))
+  (is (= 0 (parse/slide-number "ppt/slides/slidebad.xml")))
+  (is (= 12 (parse/slide-number "ppt/slides/slide12.xml")))
+  (is (= {} (parse/theme {})))
+  (is (= {:presentationml.font/majorFont "Aptos Display"
+          :presentationml.font/minorFont "Aptos"}
+         (parse/theme-fonts nil)))
+  (is (= {:presentationml/source "ppt/theme/theme1.xml"
+          :presentationml/fonts {:presentationml.font/majorFont "Aptos Display"
+                                 :presentationml.font/minorFont "Aptos"}}
+         (parse/theme {"ppt/theme/theme1.xml" "<a:theme/>"})))
+  (is (= "Slide 3" (parse/slide-title [] 2)))
+  (is (= "From shape" (parse/slide-title [{:drawingml/text "From shape"}] 0)))
+  (let [deck (parse/deck {"ppt/presentation.xml" "<p:presentation/>"} {:presentationml/title "Attr title"})]
+    (is (parse/valid-deck? deck))
+    (is (= "Attr title" (:presentationml/title deck)))
+    (is (= "slide-1" (-> deck :presentationml/slides first :presentationml/id))))
+  (let [deck (parse/deck {} {:title "Explicit title"})]
+    (is (= "Explicit title" (:presentationml/title deck))))
+  (let [deck (parse/deck {})]
+    (is (= "Imported deck" (:presentationml/title deck))))
+  (is (nil? (parse/parse-long-safe nil)))
+  (is (not (parse/valid-deck? {:presentationml/id 1 :presentationml/slides []})))
+  (is (not (parse/valid-deck? nil)))
+  (is (not (parse/valid-deck? {:presentationml/id "x" :presentationml/slides [{:presentationml/shapes nil}]}))))
