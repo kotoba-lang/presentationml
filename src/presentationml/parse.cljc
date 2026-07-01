@@ -55,7 +55,7 @@
       (str "Slide " (inc idx))))
 
 (defn slide [idx path xml]
-  (let [shapes (dml/shapes xml)]
+  (let [shapes (dml/shapes xml {:part path})]
     {:presentationml/id (str "slide-" (inc idx))
      :presentationml/title (slide-title shapes idx)
      :presentationml/source path
