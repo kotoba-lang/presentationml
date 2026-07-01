@@ -22,6 +22,69 @@
   (or (some-> (second (re-find #"slide(\d+)\.xml$" (str name))) parse-long-safe)
       0))
 
+(defn rels-path [part-path]
+  (let [path (str part-path)
+        idx (str/last-index-of path "/")]
+    (if idx
+      (str (subs path 0 idx) "/_rels/" (subs path (inc idx)) ".rels")
+      (str "_rels/" path ".rels"))))
+
+(defn- dirname [path]
+  (if-let [idx (str/last-index-of (str path) "/")]
+    (subs (str path) 0 idx)
+    ""))
+
+(defn- normalize-path [path]
+  (let [absolute? (str/starts-with? path "/")]
+    (->> (str/split (str/replace-first path #"^/" "") #"/")
+         (reduce (fn [parts part]
+                   (case part
+                     "" parts
+                     "." parts
+                     ".." (vec (butlast parts))
+                     (conj parts part)))
+                 [])
+         (str/join "/")
+         (#(if absolute? % %)))))
+
+(defn resolve-target [source-part target]
+  (let [target (str target)]
+    (cond
+      (str/blank? target) target
+      (str/starts-with? target "/") (normalize-path target)
+      (re-find #"^[A-Za-z][A-Za-z0-9+.-]*:" target) target
+      :else (normalize-path (str (dirname source-part) "/" target)))))
+
+(defn relationships [entries part-path]
+  (let [rels-xml (entries (rels-path part-path))]
+    (into {}
+          (keep (fn [match]
+                  (let [tag (if (string? match) match (first match))
+                        id (dml/xml-attr tag "Id")
+                        target (dml/xml-attr tag "Target")]
+                    (when id
+                      [id (cond-> {:id id
+                                   :type (dml/xml-attr tag "Type")
+                                   :target target}
+                            target (assoc :target-path (resolve-target part-path target)))]))))
+          (re-seq #"<Relationship\b[^>]*/?>" (or rels-xml "")))))
+
+(defn- workbook-path [entries chart-part]
+  (some (fn [{:keys [target-path target type]}]
+          (when (or (some-> target-path (str/ends-with? ".xlsx"))
+                    (some-> target (str/ends-with? ".xlsx"))
+                    (some-> type (str/includes? "/package")))
+            target-path))
+        (vals (relationships entries chart-part))))
+
+(defn slide-relationships [entries slide-path]
+  (into {}
+        (map (fn [[id rel]]
+               [id (cond-> rel
+                     (some-> (:target-path rel) (str/includes? "/charts/"))
+                     (assoc :workbook-path (workbook-path entries (:target-path rel))))]))
+        (relationships entries slide-path)))
+
 (defn theme-colors [theme-xml]
   (let [roles ["dk1" "lt1" "dk2" "lt2" "accent1" "accent2" "accent3" "accent4" "accent5" "accent6" "hlink" "folHlink"]]
     (into {}
@@ -54,12 +117,15 @@
   (or (some :drawingml/text shapes)
       (str "Slide " (inc idx))))
 
-(defn slide [idx path xml]
-  (let [shapes (dml/shapes xml {:part path})]
+(defn slide
+  ([idx path xml] (slide idx path xml {}))
+  ([idx path xml opts]
+  (let [shapes (dml/shapes xml {:part path
+                                :rels (:rels opts)})]
     {:presentationml/id (str "slide-" (inc idx))
      :presentationml/title (slide-title shapes idx)
      :presentationml/source path
-     :presentationml/shapes shapes}))
+     :presentationml/shapes shapes})))
 
 (defn deck
   ([entries] (deck entries {}))
@@ -70,7 +136,10 @@
          slide-paths (->> (keys entries)
                           (filter #(re-matches #"ppt/slides/slide\d+\.xml" %))
                           (sort-by slide-number))
-         slides (vec (map-indexed (fn [idx path] (slide idx path (entries path))) slide-paths))
+         slides (vec (map-indexed (fn [idx path]
+                                     (slide idx path (entries path)
+                                            {:rels (slide-relationships entries path)}))
+                                   slide-paths))
          title (or (:title opts)
                    (:presentationml/title opts)
                    (dml/first-xml-text core "dc:title")

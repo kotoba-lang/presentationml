@@ -77,3 +77,19 @@
   (is (not (parse/valid-deck? {:presentationml/id 1 :presentationml/slides []})))
   (is (not (parse/valid-deck? nil)))
   (is (not (parse/valid-deck? {:presentationml/id "x" :presentationml/slides [{:presentationml/shapes nil}]}))))
+
+(deftest resolves-slide-chart-and-workbook-relationships
+  (let [entries {"ppt/slides/slide1.xml" "<p:sld><p:cSld><p:spTree><p:graphicFrame><p:nvGraphicFramePr><p:cNvPr name=\"Revenue\"/></p:nvGraphicFramePr><a:graphic><a:graphicData><c:chart r:id=\"rId2\"/></a:graphicData></a:graphic></p:graphicFrame></p:spTree></p:cSld></p:sld>"
+                 "ppt/slides/_rels/slide1.xml.rels" "<Relationships><Relationship Id=\"rId2\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/chart\" Target=\"../charts/chart1.xml\"/></Relationships>"
+                 "ppt/charts/chart1.xml" "<c:chartSpace/>"
+                 "ppt/charts/_rels/chart1.xml.rels" "<Relationships><Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/package\" Target=\"../embeddings/Microsoft_Excel_Worksheet1.xlsx\"/></Relationships>"
+                 "ppt/embeddings/Microsoft_Excel_Worksheet1.xlsx" "workbook"}
+        rels (parse/slide-relationships entries "ppt/slides/slide1.xml")
+        deck (parse/deck entries)
+        chart (-> deck :presentationml/slides first :presentationml/shapes first)]
+    (is (= "ppt/charts/chart1.xml" (get-in rels ["rId2" :target-path])))
+    (is (= "ppt/embeddings/Microsoft_Excel_Worksheet1.xlsx"
+           (get-in rels ["rId2" :workbook-path])))
+    (is (= "ppt/charts/chart1.xml" (:drawingml/chart-part chart)))
+    (is (= "ppt/embeddings/Microsoft_Excel_Worksheet1.xlsx"
+           (:drawingml/workbook-part chart)))))
