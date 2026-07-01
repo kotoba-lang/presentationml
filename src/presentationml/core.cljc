@@ -94,3 +94,16 @@
             "ppt/slideLayouts/_rels/slideLayout1.xml.rels" (relationships-xml [{:id "rId1" :type "http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideMaster" :target "../slideMasters/slideMaster1.xml"}])}
            (map-indexed (fn [i s] [(str "ppt/slides/slide" (inc i) ".xml") (slide-xml s)]) slides)
            (map-indexed (fn [i _] [(str "ppt/slides/_rels/slide" (inc i) ".xml.rels") (relationships-xml [])]) slides)))))
+
+(defn valid-slide? [slide]
+  (and (map? slide)
+       (= :slide (:presentationml/type slide))
+       (string? (:body slide))))
+
+(defn valid-package-map? [pkg]
+  (and (map? pkg)
+       (contains? pkg "[Content_Types].xml")
+       (contains? pkg "_rels/.rels")
+       (contains? pkg "ppt/presentation.xml")
+       (some #(re-matches #"ppt/slides/slide\d+\.xml" %) (keys pkg))
+       (every? string? (vals pkg))))
