@@ -69,6 +69,51 @@
           deck (parse/deck entries)]
       (is (not (contains? (-> deck :presentationml/slides first) :presentationml/notes))))))
 
+(deftest tracks-distinct-masters-and-per-slide-master-ref-for-multi-master-decks
+  (let [entries
+        {"ppt/presentation.xml" "<p:presentation><p:sldSz cx=\"9144000\" cy=\"5143500\"/></p:presentation>"
+         "ppt/theme/theme1.xml" "<a:theme><a:clrScheme><a:dk1><a:srgbClr val=\"111111\"/></a:dk1></a:clrScheme></a:theme>"
+
+         "ppt/slides/slide1.xml"
+         (str "<p:sld><p:cSld><p:spTree>"
+              "<p:sp><p:spPr></p:spPr><p:txBody><a:p><a:r><a:t>Dark section</a:t></a:r></a:p></p:txBody></p:sp>"
+              "</p:spTree></p:cSld></p:sld>")
+         "ppt/slides/_rels/slide1.xml.rels"
+         (str "<Relationships><Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideLayout\" Target=\"../slideLayouts/slideLayout1.xml\"/></Relationships>")
+         "ppt/slideLayouts/slideLayout1.xml" "<p:sldLayout><p:cSld><p:spTree></p:spTree></p:cSld></p:sldLayout>"
+         "ppt/slideLayouts/_rels/slideLayout1.xml.rels"
+         "<Relationships><Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideMaster\" Target=\"../slideMasters/slideMaster1.xml\"/></Relationships>"
+         "ppt/slideMasters/slideMaster1.xml"
+         "<p:sldMaster><p:cSld><p:bg><p:bgPr><a:solidFill><a:srgbClr val=\"222222\"/></a:solidFill></p:bgPr></p:bg><p:spTree></p:spTree></p:cSld></p:sldMaster>"
+
+         "ppt/slides/slide2.xml"
+         (str "<p:sld><p:cSld><p:spTree>"
+              "<p:sp><p:spPr></p:spPr><p:txBody><a:p><a:r><a:t>Light section</a:t></a:r></a:p></p:txBody></p:sp>"
+              "</p:spTree></p:cSld></p:sld>")
+         "ppt/slides/_rels/slide2.xml.rels"
+         (str "<Relationships><Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideLayout\" Target=\"../slideLayouts/slideLayout2.xml\"/></Relationships>")
+         "ppt/slideLayouts/slideLayout2.xml" "<p:sldLayout><p:cSld><p:spTree></p:spTree></p:cSld></p:sldLayout>"
+         "ppt/slideLayouts/_rels/slideLayout2.xml.rels"
+         "<Relationships><Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideMaster\" Target=\"../slideMasters/slideMaster2.xml\"/></Relationships>"
+         "ppt/slideMasters/slideMaster2.xml"
+         "<p:sldMaster><p:cSld><p:bg><p:bgPr><a:solidFill><a:srgbClr val=\"EEEEEE\"/></a:solidFill></p:bgPr></p:bg><p:spTree></p:spTree></p:cSld></p:sldMaster>"}
+        d (parse/deck entries)
+        masters (:presentationml/masters d)
+        slide1 (first (:presentationml/slides d))
+        slide2 (second (:presentationml/slides d))]
+    (testing "two distinct masters are tracked, each with its own background"
+      (is (= 2 (count masters)))
+      (is (= #{"222222" "EEEEEE"} (set (keep :presentationml/background masters)))))
+    (testing "each slide is tagged with the id of the master it actually uses"
+      (is (some? (:presentationml/master-ref slide1)))
+      (is (some? (:presentationml/master-ref slide2)))
+      (is (not= (:presentationml/master-ref slide1) (:presentationml/master-ref slide2)))))
+  (testing "a single-master deck gets NO :presentationml/masters key at all (unchanged behavior)"
+    (let [entries {"ppt/slides/slide1.xml" "<p:sld><p:cSld><p:spTree></p:spTree></p:cSld></p:sld>"}
+          d (parse/deck entries)]
+      (is (not (contains? d :presentationml/masters)))
+      (is (not (contains? (first (:presentationml/slides d)) :presentationml/master-ref))))))
+
 (deftest resolves-schemeclr-through-a-custom-non-default-clrmap
   (let [entries
         {"ppt/presentation.xml" "<p:presentation><p:sldSz cx=\"9144000\" cy=\"5143500\"/></p:presentation>"

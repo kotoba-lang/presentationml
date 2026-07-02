@@ -145,6 +145,22 @@
                   (keyword (or (some-> clr-map-tag (dml/xml-attr role)) default-slot))]))
           default-clr-map)))
 
+(defn master-background
+  "A slideMaster's own background fill: either a literal <p:bg><p:bgPr>
+  <a:solidFill>/<a:gradFill>.../<p:bgPr></p:bg> (what this package's OWN
+  writer emits) or a theme-referenced <p:bg><p:bgRef idx=\"...\">
+  <a:schemeClr val=\"...\"/></p:bgRef></p:bg> (the common form in real
+  PowerPoint-authored masters), resolved through the SAME theme-colors map
+  used for shape schemeClr resolution. Currently only the first gradient
+  stop is captured for a gradient background (matches solid-fill's existing
+  gradient approximation elsewhere) -- nil when the master has no <p:bg> at
+  all."
+  [master-xml theme-colors]
+  (let [bg-block (some-> (re-find #"<p:bg\b[^>]*>([\s\S]*?)</p:bg>" (or master-xml "")) second)]
+    (or (some-> bg-block (dml/solid-fill theme-colors))
+        (some-> (re-find #"<p:bgRef\b[^>]*>([\s\S]*?)</p:bgRef>" (or bg-block "")) second
+                (dml/first-color theme-colors)))))
+
 (defn theme-color-map-for-slide
   "theme-color-roles (the real :dk1/:lt1/:accent1... theme slots) PLUS the
   slide's effective clrMap aliases (:bg1/:tx1/:bg2/:tx2/...) resolved to
@@ -249,6 +265,30 @@
              :presentationml/shapes shapes}
       (:notes opts) (assoc :presentationml/notes (:notes opts))))))
 
+(defn- slide-master-path [entries slide-path]
+  (master-path entries (layout-path entries slide-path)))
+
+(defn- master-id-from-path [path]
+  (some-> path (str/replace #"^.*/" "") (str/replace #"\.xml$" "")))
+
+(defn masters-info
+  "Distinct slideMaster parts referenced across `slide-paths`, each as
+  {:presentationml/id ... :presentationml/path ... :presentationml/background
+  ...}, in order of first appearance -- ONLY populated for decks that
+  actually use MORE than one distinct master. A single-master deck (the
+  overwhelming common case) gets nil here, so deck's output is completely
+  unchanged for it -- multi-master EDN only appears when the source PPTX
+  actually has sections with visually distinct masters."
+  [entries slide-paths theme-xml]
+  (let [distinct-paths (distinct (keep #(slide-master-path entries %) slide-paths))]
+    (when (> (count distinct-paths) 1)
+      (let [theme-colors (theme-color-roles theme-xml)]
+        (mapv (fn [path]
+                (let [bg (master-background (entries path) theme-colors)]
+                  (cond-> {:presentationml/id (master-id-from-path path) :presentationml/path path}
+                    bg (assoc :presentationml/background bg))))
+              distinct-paths)))))
+
 (defn deck
   ([entries] (deck entries {}))
   ([entries opts]
@@ -259,12 +299,17 @@
          slide-paths (->> (keys entries)
                           (filter #(re-matches #"ppt/slides/slide\d+\.xml" %))
                           (sort-by slide-number))
+         masters (masters-info entries slide-paths theme-xml)
+         master-ref-by-path (into {} (map (juxt :presentationml/path :presentationml/id)) masters)
          slides (vec (map-indexed (fn [idx path]
-                                     (slide idx path (entries path)
-                                            {:rels (slide-relationships entries path)
-                                             :placeholder-geometry (placeholder-geometry entries path)
-                                             :theme-colors (theme-color-map-for-slide entries path theme-xml)
-                                             :notes (notes-text entries path)}))
+                                     (cond-> (slide idx path (entries path)
+                                                    {:rels (slide-relationships entries path)
+                                                     :placeholder-geometry (placeholder-geometry entries path)
+                                                     :theme-colors (theme-color-map-for-slide entries path theme-xml)
+                                                     :notes (notes-text entries path)})
+                                       (seq masters)
+                                       (assoc :presentationml/master-ref
+                                              (get master-ref-by-path (slide-master-path entries path)))))
                                    slide-paths))
          title (or (:title opts)
                    (:presentationml/title opts)
@@ -281,7 +326,8 @@
                                         :presentationml/title title
                                         :presentationml/shapes []}])}
             size
-            (when (seq theme) {:presentationml/theme theme})))))
+            (when (seq theme) {:presentationml/theme theme})
+            (when (seq masters) {:presentationml/masters masters})))))
 
 (defn valid-deck? [deck]
   (and (map? deck)
