@@ -346,6 +346,28 @@
                     bg (assoc :presentationml/background bg))))
               distinct-paths)))))
 
+(defn- layout-type-from-xml [layout-xml]
+  (dml/xml-attr (or (re-find #"<p:sldLayout\b[^>]*>" (or layout-xml "")) "") "type"))
+
+(defn layouts-info
+  "Distinct slideLayout parts referenced across `slide-paths`, each as
+  {:presentationml/id ... :presentationml/path ... :presentationml/layout-type
+  ...}, same ONLY-when-more-than-one convention as masters-info -- a single-
+  layout deck (the overwhelming common case) gets nil here, unchanged output.
+  Previously a slide's specific layout assignment was read NOWHERE: the
+  write side (slides.pptx) already supported multiple layouts per master
+  (deck-layout-entries/slide-layout), but a slide re-exported after an
+  import round-trip always fell back to each master's IMPLICIT default
+  (nil/blank) layout, silently losing which named layout it actually used."
+  [entries slide-paths]
+  (let [distinct-paths (distinct (keep #(layout-path entries %) slide-paths))]
+    (when (> (count distinct-paths) 1)
+      (mapv (fn [path]
+              (cond-> {:presentationml/id (master-id-from-path path) :presentationml/path path}
+                (layout-type-from-xml (entries path))
+                (assoc :presentationml/layout-type (layout-type-from-xml (entries path)))))
+            distinct-paths))))
+
 (defn doc-properties
   "The deck-level metadata fields OOXML carries in docProps/core.xml
   (Dublin Core author/subject/keywords/category/lastModifiedBy/created/
@@ -380,6 +402,8 @@
                           (sort-by slide-number))
          masters (masters-info entries slide-paths theme-xml)
          master-ref-by-path (into {} (map (juxt :presentationml/path :presentationml/id)) masters)
+         layouts (layouts-info entries slide-paths)
+         layout-ref-by-path (into {} (map (juxt :presentationml/path :presentationml/id)) layouts)
          slides (vec (map-indexed (fn [idx path]
                                      (cond-> (slide idx path (entries path)
                                                     {:rels (slide-relationships entries path)
@@ -388,7 +412,10 @@
                                                      :notes (notes-text entries path)})
                                        (seq masters)
                                        (assoc :presentationml/master-ref
-                                              (get master-ref-by-path (slide-master-path entries path)))))
+                                              (get master-ref-by-path (slide-master-path entries path)))
+                                       (seq layouts)
+                                       (assoc :presentationml/layout-ref
+                                              (get layout-ref-by-path (layout-path entries path)))))
                                    slide-paths))
          title (or (:title opts)
                    (:presentationml/title opts)
@@ -407,6 +434,7 @@
             size
             (when (seq theme) {:presentationml/theme theme})
             (when (seq masters) {:presentationml/masters masters})
+            (when (seq layouts) {:presentationml/layouts layouts})
             (doc-properties core app)))))
 
 (defn valid-deck? [deck]
