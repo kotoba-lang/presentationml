@@ -167,19 +167,33 @@
                     [(keyword role) (keyword slot)])))
           clr-map-roles)))
 
+(defn- gradient-fill->background
+  "dml/gradient-fill's {:stops [{:position .. :color ..} ...] :angle ..}
+  into slides.pptx/background-fill-xml's own gradient shape, {:stops
+  [[pos hex] ...] :angle ..} -- a DIFFERENT stop representation (tuples,
+  not maps) than the shape-level gradient uses, predating gradient-fill
+  and kept as-is rather than migrated, since background-fill-xml (the one
+  and only consumer) already round-trips it correctly."
+  [{:keys [stops angle]}]
+  (cond-> {:stops (mapv (fn [{:keys [position color]}] [(or position 0) color]) stops)}
+    angle (assoc :angle angle)))
+
 (defn master-background
   "A slideMaster's own background fill: either a literal <p:bg><p:bgPr>
   <a:solidFill>/<a:gradFill>.../<p:bgPr></p:bg> (what this package's OWN
   writer emits) or a theme-referenced <p:bg><p:bgRef idx=\"...\">
   <a:schemeClr val=\"...\"/></p:bgRef></p:bg> (the common form in real
   PowerPoint-authored masters), resolved through the SAME theme-colors map
-  used for shape schemeClr resolution. Currently only the first gradient
-  stop is captured for a gradient background (matches solid-fill's existing
-  gradient approximation elsewhere) -- nil when the master has no <p:bg> at
-  all."
+  used for shape schemeClr resolution. A gradient background now carries
+  its FULL multi-stop fidelity (via dml/gradient-fill, tried before the
+  first-stop-only solid-fill fallback) -- previously always collapsed to
+  a single flat color, even though slides.pptx's own writer has supported
+  a real multi-stop gradient background since before this. nil when the
+  master has no <p:bg> at all."
   [master-xml theme-colors]
   (let [bg-block (some-> (re-find #"<p:bg\b[^>]*>([\s\S]*?)</p:bg>" (or master-xml "")) second)]
-    (or (some-> bg-block (dml/solid-fill theme-colors))
+    (or (some-> bg-block (dml/gradient-fill theme-colors) gradient-fill->background)
+        (some-> bg-block (dml/solid-fill theme-colors))
         (some-> (re-find #"<p:bgRef\b[^>]*>([\s\S]*?)</p:bgRef>" (or bg-block "")) second
                 (dml/first-color theme-colors)))))
 

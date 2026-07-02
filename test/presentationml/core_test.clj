@@ -383,3 +383,18 @@
     (is (= "ppt/charts/chart1.xml" (:drawingml/chart-part chart)))
     (is (= "ppt/embeddings/Microsoft_Excel_Worksheet1.xlsx"
            (:drawingml/workbook-part chart)))))
+
+(deftest master-background-gradient-test
+  (testing "a multi-stop gradient background carries its FULL fidelity, not just the first stop"
+    (let [master-xml (str "<p:sldMaster><p:cSld><p:bg><p:bgPr><a:gradFill><a:gsLst>"
+                          "<a:gs pos=\"0\"><a:srgbClr val=\"112233\"/></a:gs>"
+                          "<a:gs pos=\"100000\"><a:srgbClr val=\"445566\"/></a:gs>"
+                          "</a:gsLst><a:lin ang=\"5400000\"/></a:gradFill></p:bgPr></p:bg>"
+                          "<p:spTree></p:spTree></p:cSld></p:sldMaster>")]
+      (is (= {:stops [[0.0 "112233"] [100.0 "445566"]] :angle 90.0}
+             (parse/master-background master-xml nil)))))
+  (testing "a plain solid background is still a flat hex string, unchanged"
+    (let [master-xml "<p:sldMaster><p:cSld><p:bg><p:bgPr><a:solidFill><a:srgbClr val=\"336699\"/></a:solidFill></p:bgPr></p:bg><p:spTree></p:spTree></p:cSld></p:sldMaster>"]
+      (is (= "336699" (parse/master-background master-xml nil)))))
+  (testing "no <p:bg> at all -- nil"
+    (is (nil? (parse/master-background "<p:sldMaster><p:cSld><p:spTree></p:spTree></p:cSld></p:sldMaster>" nil)))))
