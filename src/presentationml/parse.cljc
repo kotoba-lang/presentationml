@@ -95,6 +95,42 @@
                       [(keyword "presentationml.color" role) color]))))
           roles)))
 
+(defn theme-color-roles
+  "Plain-keyword {:accent1 \"RRGGBB\" ...} theme colors, for drawingml's
+  <a:schemeClr> resolution (drawingml stays decoupled from presentationml's
+  namespaced keyword convention)."
+  [theme-xml]
+  (into {} (map (fn [[k v]] [(keyword (name k)) v])) (theme-colors theme-xml)))
+
+(defn- rel-target-by-type-suffix [entries part-path type-suffix]
+  (some (fn [{:keys [type target-path]}]
+          (when (and target-path (str/ends-with? (or type "") type-suffix))
+            target-path))
+        (vals (relationships entries part-path))))
+
+(defn layout-path
+  "The slideLayout part path referenced by a slide, via its .rels."
+  [entries slide-path]
+  (rel-target-by-type-suffix entries slide-path "/slideLayout"))
+
+(defn master-path
+  "The slideMaster part path referenced by a slideLayout, via its .rels."
+  [entries layout-path]
+  (when layout-path
+    (rel-target-by-type-suffix entries layout-path "/slideMaster")))
+
+(defn placeholder-geometry
+  "Placeholder geometry index for a slide: its slideLayout's placeholder
+  positions, falling back to its slideMaster's. Feeds drawingml's
+  :placeholder-geometry opt so shapes that omit <a:xfrm> inherit the same
+  position PowerPoint itself would apply."
+  [entries slide-path]
+  (let [layout (layout-path entries slide-path)
+        master (master-path entries layout)]
+    (dml/merge-placeholder-geometry-indexes
+     (some-> layout entries dml/placeholder-geometry-index)
+     (some-> master entries dml/placeholder-geometry-index))))
+
 (defn theme-fonts [theme-xml]
   (let [major (or (some-> (second (re-find #"<a:majorFont>[\s\S]*?<a:latin\b[^>]*typeface=\"([^\"]+)\"" (or theme-xml ""))) dml/xml-unescape)
                   "Aptos Display")
@@ -121,7 +157,9 @@
   ([idx path xml] (slide idx path xml {}))
   ([idx path xml opts]
   (let [shapes (dml/shapes xml {:part path
-                                :rels (:rels opts)})]
+                                :rels (:rels opts)
+                                :placeholder-geometry (:placeholder-geometry opts)
+                                :theme-colors (:theme-colors opts)})]
     {:presentationml/id (str "slide-" (inc idx))
      :presentationml/title (slide-title shapes idx)
      :presentationml/source path
@@ -133,12 +171,15 @@
    (let [presentation (entries "ppt/presentation.xml")
          core (entries "docProps/core.xml")
          size (slide-size presentation)
+         theme-color-map (theme-color-roles (entries "ppt/theme/theme1.xml"))
          slide-paths (->> (keys entries)
                           (filter #(re-matches #"ppt/slides/slide\d+\.xml" %))
                           (sort-by slide-number))
          slides (vec (map-indexed (fn [idx path]
                                      (slide idx path (entries path)
-                                            {:rels (slide-relationships entries path)}))
+                                            {:rels (slide-relationships entries path)
+                                             :placeholder-geometry (placeholder-geometry entries path)
+                                             :theme-colors theme-color-map}))
                                    slide-paths))
          title (or (:title opts)
                    (:presentationml/title opts)

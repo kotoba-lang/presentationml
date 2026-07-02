@@ -43,6 +43,36 @@
     (is (= 28.0 (:drawingml/font-size shape)))
     (is (= "ABCDEF" (get-in deck [:presentationml/theme :presentationml/colors :presentationml.color/accent1])))))
 
+(deftest inherits-placeholder-geometry-and-scheme-color-from-layout
+  (let [entries
+        {"ppt/presentation.xml" "<p:presentation><p:sldSz cx=\"9144000\" cy=\"5143500\"/></p:presentation>"
+         "ppt/theme/theme1.xml" "<a:theme><a:clrScheme><a:accent1><a:srgbClr val=\"4472C4\"/></a:accent1></a:clrScheme></a:theme>"
+         "ppt/slides/slide1.xml"
+         (str "<p:sld><p:cSld><p:spTree>"
+              "<p:sp><p:nvSpPr><p:nvPr><p:ph type=\"title\"/></p:nvPr></p:nvSpPr>"
+              "<p:spPr><a:solidFill><a:schemeClr val=\"accent1\"/></a:solidFill></p:spPr>"
+              "<p:txBody><a:p><a:r><a:t>Untouched title</a:t></a:r></a:p></p:txBody></p:sp>"
+              "</p:spTree></p:cSld></p:sld>")
+         "ppt/slides/_rels/slide1.xml.rels"
+         (str "<Relationships>"
+              "<Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideLayout\" Target=\"../slideLayouts/slideLayout1.xml\"/>"
+              "</Relationships>")
+         "ppt/slideLayouts/slideLayout1.xml"
+         (str "<p:sldLayout><p:cSld><p:spTree>"
+              "<p:sp><p:nvSpPr><p:nvPr><p:ph type=\"title\"/></p:nvPr></p:nvSpPr>"
+              "<p:spPr><a:xfrm><a:off x=\"457200\" y=\"274638\"/><a:ext cx=\"8229600\" cy=\"1143000\"/></a:xfrm></p:spPr></p:sp>"
+              "</p:spTree></p:cSld></p:sldLayout>")}
+        deck (parse/deck entries)
+        shape (-> deck :presentationml/slides first :presentationml/shapes first)]
+    ;; The slide's own <p:sp> omits <a:xfrm> (as PowerPoint does for an
+    ;; untouched placeholder); position must come from the layout, not the
+    ;; hardcoded 0.8in/0.8in/8.4in/0.7in fallback.
+    (is (= 0.5 (:drawingml/x shape)))
+    (is (not= 0.8 (:drawingml/x shape)))
+    ;; <a:schemeClr val="accent1"/> resolves through the theme, not the
+    ;; hardcoded "17202A" fallback.
+    (is (= "4472C4" (:drawingml/color shape)))))
+
 (deftest parses-generated-package-roundtrip
   (let [pkg (pml/package-map {:slides [(pml/slide "<p:sp><p:nvSpPr><p:cNvPr name=\"Generated\"/></p:nvSpPr><p:txBody><a:p><a:r><a:t>Generated text</a:t></a:r></a:p></p:txBody></p:sp>")]})
         deck (parse/deck pkg)]
