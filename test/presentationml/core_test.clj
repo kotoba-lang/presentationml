@@ -70,6 +70,49 @@
       (is (= "Author" (:presentationml/author d)))
       (is (= "Acme" (:presentationml/company d))))))
 
+(deftest tracks-distinct-layouts-and-per-slide-layout-ref-test
+  (let [entries
+        {"ppt/presentation.xml" "<p:presentation><p:sldSz cx=\"9144000\" cy=\"5143500\"/></p:presentation>"
+
+         "ppt/slides/slide1.xml"
+         (str "<p:sld><p:cSld><p:spTree>"
+              "<p:sp><p:spPr></p:spPr><p:txBody><a:p><a:r><a:t>Title slide</a:t></a:r></a:p></p:txBody></p:sp>"
+              "</p:spTree></p:cSld></p:sld>")
+         "ppt/slides/_rels/slide1.xml.rels"
+         "<Relationships><Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideLayout\" Target=\"../slideLayouts/slideLayout1.xml\"/></Relationships>"
+         "ppt/slideLayouts/slideLayout1.xml" "<p:sldLayout type=\"title\"><p:cSld><p:spTree></p:spTree></p:cSld></p:sldLayout>"
+         "ppt/slideLayouts/_rels/slideLayout1.xml.rels"
+         "<Relationships><Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideMaster\" Target=\"../slideMasters/slideMaster1.xml\"/></Relationships>"
+
+         "ppt/slides/slide2.xml"
+         (str "<p:sld><p:cSld><p:spTree>"
+              "<p:sp><p:spPr></p:spPr><p:txBody><a:p><a:r><a:t>Body slide</a:t></a:r></a:p></p:txBody></p:sp>"
+              "</p:spTree></p:cSld></p:sld>")
+         "ppt/slides/_rels/slide2.xml.rels"
+         "<Relationships><Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideLayout\" Target=\"../slideLayouts/slideLayout2.xml\"/></Relationships>"
+         "ppt/slideLayouts/slideLayout2.xml" "<p:sldLayout type=\"obj\"><p:cSld><p:spTree></p:spTree></p:cSld></p:sldLayout>"
+         "ppt/slideLayouts/_rels/slideLayout2.xml.rels"
+         "<Relationships><Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideMaster\" Target=\"../slideMasters/slideMaster1.xml\"/></Relationships>"
+
+         "ppt/slideMasters/slideMaster1.xml"
+         "<p:sldMaster><p:cSld><p:spTree></p:spTree></p:cSld></p:sldMaster>"}
+        d (parse/deck entries)
+        layouts (:presentationml/layouts d)
+        slide1 (first (:presentationml/slides d))
+        slide2 (second (:presentationml/slides d))]
+    (testing "two distinct layouts are tracked, each with its own type -- even though BOTH use the same master"
+      (is (= 2 (count layouts)))
+      (is (= #{"title" "obj"} (set (keep :presentationml/layout-type layouts)))))
+    (testing "each slide is tagged with the id of the layout it actually uses"
+      (is (some? (:presentationml/layout-ref slide1)))
+      (is (some? (:presentationml/layout-ref slide2)))
+      (is (not= (:presentationml/layout-ref slide1) (:presentationml/layout-ref slide2)))))
+  (testing "a single-layout deck gets NO :presentationml/layouts key at all (unchanged behavior)"
+    (let [entries {"ppt/slides/slide1.xml" "<p:sld><p:cSld><p:spTree></p:spTree></p:cSld></p:sld>"}
+          d (parse/deck entries)]
+      (is (not (contains? d :presentationml/layouts)))
+      (is (not (contains? (first (:presentationml/slides d)) :presentationml/layout-ref))))))
+
 (deftest reads-slide-transition-test
   (testing "a transition with an effect element, speed, and explicit advance-on-click=false + timed advance"
     (let [sld-xml (str "<p:sld><p:cSld><p:spTree></p:spTree></p:cSld>"
