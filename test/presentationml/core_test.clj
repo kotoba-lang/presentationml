@@ -1,6 +1,6 @@
 (ns presentationml.core-test
   (:require [clojure.string :as str]
-            [clojure.test :refer [deftest is]]
+            [clojure.test :refer [deftest is testing]]
             [presentationml.core :as pml]
             [presentationml.parse :as parse]))
 
@@ -50,8 +50,8 @@
          "ppt/slides/slide1.xml"
          (str "<p:sld><p:cSld><p:spTree>"
               "<p:sp><p:nvSpPr><p:nvPr><p:ph type=\"title\"/></p:nvPr></p:nvSpPr>"
-              "<p:spPr><a:solidFill><a:schemeClr val=\"accent1\"/></a:solidFill></p:spPr>"
-              "<p:txBody><a:p><a:r><a:t>Untouched title</a:t></a:r></a:p></p:txBody></p:sp>"
+              "<p:spPr></p:spPr>"
+              "<p:txBody><a:p><a:r><a:rPr><a:solidFill><a:schemeClr val=\"accent1\"/></a:solidFill></a:rPr><a:t>Untouched title</a:t></a:r></a:p></p:txBody></p:sp>"
               "</p:spTree></p:cSld></p:sld>")
          "ppt/slides/_rels/slide1.xml.rels"
          (str "<Relationships>"
@@ -79,6 +79,28 @@
     (is (parse/valid-deck? deck))
     (is (= "Generated text"
            (-> deck :presentationml/slides first :presentationml/shapes first :drawingml/text)))))
+
+(deftest theme-fonts-extracts-east-asian-and-complex-script-typefaces
+  (let [theme-xml (str "<a:theme><a:themeElements><a:fontScheme>"
+                       "<a:majorFont><a:latin typeface=\"Aptos Display\"/>"
+                       "<a:ea typeface=\"游ゴシック\"/><a:cs typeface=\"Arial\"/></a:majorFont>"
+                       "<a:minorFont><a:latin typeface=\"Aptos\"/>"
+                       "<a:ea typeface=\"メイリオ\"/><a:cs typeface=\"Arial\"/></a:minorFont>"
+                       "</a:fontScheme></a:themeElements></a:theme>")]
+    (is (= {:presentationml.font/majorFont "Aptos Display"
+            :presentationml.font/majorFont-ea "游ゴシック"
+            :presentationml.font/majorFont-cs "Arial"
+            :presentationml.font/minorFont "Aptos"
+            :presentationml.font/minorFont-ea "メイリオ"
+            :presentationml.font/minorFont-cs "Arial"}
+           (parse/theme-fonts theme-xml))))
+  (testing "an empty ea/cs typeface attribute (PowerPoint often emits typeface=\"\") is treated as absent"
+    (let [theme-xml (str "<a:theme><a:themeElements><a:fontScheme>"
+                         "<a:majorFont><a:latin typeface=\"Aptos Display\"/><a:ea typeface=\"\"/><a:cs typeface=\"\"/></a:majorFont>"
+                         "<a:minorFont><a:latin typeface=\"Aptos\"/><a:ea typeface=\"\"/><a:cs typeface=\"\"/></a:minorFont>"
+                         "</a:fontScheme></a:themeElements></a:theme>")]
+      (is (= {:presentationml.font/majorFont "Aptos Display" :presentationml.font/minorFont "Aptos"}
+             (parse/theme-fonts theme-xml))))))
 
 (deftest parses-defaults-and-edge-cases
   (is (= {:presentationml/width 10.0 :presentationml/height 5.625}

@@ -131,13 +131,30 @@
      (some-> layout entries dml/placeholder-geometry-index)
      (some-> master entries dml/placeholder-geometry-index))))
 
-(defn theme-fonts [theme-xml]
-  (let [major (or (some-> (second (re-find #"<a:majorFont>[\s\S]*?<a:latin\b[^>]*typeface=\"([^\"]+)\"" (or theme-xml ""))) dml/xml-unescape)
-                  "Aptos Display")
-        minor (or (some-> (second (re-find #"<a:minorFont>[\s\S]*?<a:latin\b[^>]*typeface=\"([^\"]+)\"" (or theme-xml ""))) dml/xml-unescape)
-                  "Aptos")]
-    {:presentationml.font/majorFont major
-     :presentationml.font/minorFont minor}))
+(defn- font-scheme-block [theme-xml tag]
+  (second (re-find (re-pattern (str "<a:" tag ">([\\s\\S]*?)</a:" tag ">")) (or theme-xml ""))))
+
+(defn- font-scheme-typeface [block tag]
+  (some-> (second (re-find (re-pattern (str "<a:" tag "\\b[^>]*typeface=\"([^\"]*)\"")) (or block "")))
+          dml/xml-unescape
+          not-empty))
+
+(defn theme-fonts
+  "Theme fonts by role and script slot. :majorFont/:minorFont are the Latin
+  typefaces (the only ones this package read before); :majorFont-ea/
+  :minorFont-ea and :majorFont-cs/:minorFont-cs are the East Asian and
+  Complex Script typefaces PowerPoint's Font dialog exposes separately --
+  without these a CJK deck's theme font is silently incomplete even though
+  the Latin typeface round-trips fine."
+  [theme-xml]
+  (let [major-block (font-scheme-block theme-xml "majorFont")
+        minor-block (font-scheme-block theme-xml "minorFont")]
+    (cond-> {:presentationml.font/majorFont (or (font-scheme-typeface major-block "latin") "Aptos Display")
+             :presentationml.font/minorFont (or (font-scheme-typeface minor-block "latin") "Aptos")}
+      (font-scheme-typeface major-block "ea") (assoc :presentationml.font/majorFont-ea (font-scheme-typeface major-block "ea"))
+      (font-scheme-typeface minor-block "ea") (assoc :presentationml.font/minorFont-ea (font-scheme-typeface minor-block "ea"))
+      (font-scheme-typeface major-block "cs") (assoc :presentationml.font/majorFont-cs (font-scheme-typeface major-block "cs"))
+      (font-scheme-typeface minor-block "cs") (assoc :presentationml.font/minorFont-cs (font-scheme-typeface minor-block "cs")))))
 
 (defn theme [entries]
   (let [theme-xml (entries "ppt/theme/theme1.xml")
