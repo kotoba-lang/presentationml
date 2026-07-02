@@ -484,3 +484,29 @@
           plain-d (parse/deck {"ppt/slides/slide1.xml" "<p:sld><p:cSld><p:spTree></p:spTree></p:cSld></p:sld>"})]
       (is (true? (:presentationml/handout-master? d)))
       (is (not (contains? plain-d :presentationml/handout-master?))))))
+
+(deftest custom-xml-parts-test
+  (let [entries {"customXml/item1.xml" "<root xmlns=\"http://example.com/schema\"><field>value</field></root>"
+                 "customXml/itemProps1.xml"
+                 (str "<ds:datastoreItem ds:itemID=\"{11111111-1111-1111-1111-111111111111}\" "
+                      "xmlns:ds=\"http://schemas.openxmlformats.org/officeDocument/2006/customXml\">"
+                      "<ds:schemaRefs><ds:schemaRef ds:uri=\"http://example.com/schema\"/></ds:schemaRefs>"
+                      "</ds:datastoreItem>")
+                 "customXml/_rels/item1.xml.rels"
+                 (str "<Relationships>"
+                      "<Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/customXmlProps\" Target=\"itemProps1.xml\"/>"
+                      "</Relationships>")}]
+    (testing "the item + its own itemProps, cross-referenced via item1.xml's own .rels, are both preserved as raw text"
+      (is (= [{:content "<root xmlns=\"http://example.com/schema\"><field>value</field></root>"
+               :props-content (str "<ds:datastoreItem ds:itemID=\"{11111111-1111-1111-1111-111111111111}\" "
+                                   "xmlns:ds=\"http://schemas.openxmlformats.org/officeDocument/2006/customXml\">"
+                                   "<ds:schemaRefs><ds:schemaRef ds:uri=\"http://example.com/schema\"/></ds:schemaRefs>"
+                                   "</ds:datastoreItem>")}]
+             (parse/custom-xml-parts entries)))))
+  (testing "no customXml parts at all -- nil, the overwhelming common case"
+    (is (nil? (parse/custom-xml-parts {}))))
+  (testing "wired into deck"
+    (let [entries {"ppt/slides/slide1.xml" "<p:sld><p:cSld><p:spTree></p:spTree></p:cSld></p:sld>"
+                   "customXml/item1.xml" "<root>data</root>"}
+          d (parse/deck entries)]
+      (is (= [{:content "<root>data</root>"}] (:presentationml/custom-xml-parts d))))))

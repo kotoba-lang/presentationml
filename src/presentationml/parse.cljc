@@ -492,6 +492,31 @@
   (boolean (some (fn [{:keys [type]}] (str/ends-with? (or type "") "/handoutMaster"))
                  (vals (relationships entries "ppt/presentation.xml")))))
 
+(defn custom-xml-parts
+  "Every custom XML part pair (customXml/itemN.xml + its own itemPropsN.xml,
+  cross-referenced via customXml/_rels/itemN.xml.rels rather than assumed
+  from matching N -- real files don't always number them in step), as a
+  vector of {:content \"...\" :props-content \"...\"}, in item-number
+  order, preserved as opaque raw XML strings. Custom XML parts hold
+  arbitrary, tool/add-in-specific data with no fixed schema this package
+  could meaningfully interpret -- round-tripping the exact source text is
+  the only faithful option, same rationale as this session's other
+  \"preserve raw, don't reinterpret\" fields (custom-geometry, shape-
+  adjustments). nil when the deck has none at all (the overwhelming
+  common case)."
+  [entries]
+  (let [item-paths (->> (keys entries)
+                        (filter #(re-matches #"customXml/item\d+\.xml" %))
+                        (sort-by (fn [p] (some-> (re-find #"\d+" p) parse-long-safe))))]
+    (not-empty
+     (vec (for [item-path item-paths
+                :let [props-path (some (fn [{:keys [type target-path]}]
+                                          (when (and target-path (str/ends-with? (or type "") "/customXmlProps"))
+                                            target-path))
+                                        (vals (relationships entries item-path)))]]
+            (cond-> {:content (entries item-path)}
+              props-path (assoc :props-content (entries props-path))))))))
+
 (defn deck
   ([entries] (deck entries {}))
   ([entries opts]
@@ -542,6 +567,7 @@
             (when (seq layouts) {:presentationml/layouts layouts})
             (when-let [s (sections presentation)] {:presentationml/sections s})
             (when (handout-master? entries) {:presentationml/handout-master? true})
+            (when-let [cxp (custom-xml-parts entries)] {:presentationml/custom-xml-parts cxp})
             (doc-properties core app)))))
 
 (defn valid-deck? [deck]
