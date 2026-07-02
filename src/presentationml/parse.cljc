@@ -119,6 +119,50 @@
   (when layout-path
     (rel-target-by-type-suffix entries layout-path "/slideMaster")))
 
+;; The OOXML default <p:clrMap>: used per-role whenever the master's own
+;; clrMap tag doesn't specify that role explicitly.
+(def ^:private default-clr-map
+  {"bg1" "lt1" "tx1" "dk1" "bg2" "lt2" "tx2" "dk2"
+   "accent1" "accent1" "accent2" "accent2" "accent3" "accent3"
+   "accent4" "accent4" "accent5" "accent5" "accent6" "accent6"
+   "hlink" "hlink" "folHlink" "folHlink"})
+
+(defn clr-map-aliases
+  "The slide's effective clrMap ({:bg1 :lt1 :tx1 :dk1 ...} alias->theme-slot),
+  read from its slideMaster's own <p:clrMap .../> attributes when present,
+  falling back to the OOXML default map per-role otherwise. A deck whose
+  master swaps the usual dk/lt assignment (e.g. some dark-theme masters)
+  previously always resolved schemeClr through the default map regardless,
+  silently picking the wrong color."
+  [entries slide-path]
+  (let [layout (layout-path entries slide-path)
+        master (master-path entries layout)
+        master-xml (some-> master entries)
+        clr-map-tag (some-> master-xml (->> (re-find #"<p:clrMap\b[^>]*/?>")))]
+    (into {}
+          (map (fn [[role default-slot]]
+                 [(keyword role)
+                  (keyword (or (some-> clr-map-tag (dml/xml-attr role)) default-slot))]))
+          default-clr-map)))
+
+(defn theme-color-map-for-slide
+  "theme-color-roles (the real :dk1/:lt1/:accent1... theme slots) PLUS the
+  slide's effective clrMap aliases (:bg1/:tx1/:bg2/:tx2/...) resolved to
+  those slots -- <a:schemeClr val=\"...\"> in shape XML references the
+  ALIASES, not the raw theme slots, so both need to be in the map drawingml
+  looks color references up against (see drawingml.parse/first-color, which
+  checks for a pre-resolved alias entry before falling back to the default
+  bg/tx->dk/lt translation)."
+  [entries slide-path theme-xml]
+  (let [slots (theme-color-roles theme-xml)
+        aliases (clr-map-aliases entries slide-path)]
+    (merge slots
+           (into {}
+                 (keep (fn [[alias slot]]
+                         (when-let [hex (get slots slot)]
+                           [alias hex])))
+                 aliases))))
+
 (defn placeholder-geometry
   "Placeholder geometry index for a slide: its slideLayout's placeholder
   positions, falling back to its slideMaster's. Feeds drawingml's
@@ -211,7 +255,7 @@
    (let [presentation (entries "ppt/presentation.xml")
          core (entries "docProps/core.xml")
          size (slide-size presentation)
-         theme-color-map (theme-color-roles (entries "ppt/theme/theme1.xml"))
+         theme-xml (entries "ppt/theme/theme1.xml")
          slide-paths (->> (keys entries)
                           (filter #(re-matches #"ppt/slides/slide\d+\.xml" %))
                           (sort-by slide-number))
@@ -219,7 +263,7 @@
                                      (slide idx path (entries path)
                                             {:rels (slide-relationships entries path)
                                              :placeholder-geometry (placeholder-geometry entries path)
-                                             :theme-colors theme-color-map
+                                             :theme-colors (theme-color-map-for-slide entries path theme-xml)
                                              :notes (notes-text entries path)}))
                                    slide-paths))
          title (or (:title opts)
