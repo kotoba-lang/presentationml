@@ -462,3 +462,25 @@
                    "ppt/slides/slide1.xml" "<p:sld><p:cSld><p:spTree></p:spTree></p:cSld></p:sld>"}
           d (parse/deck entries)]
       (is (= [{:name "Only" :slide-indices [0]}] (:presentationml/sections d))))))
+
+(deftest handout-master-presence-test
+  (testing "a handoutMaster relationship on presentation.xml's own .rels is detected"
+    (let [entries {"ppt/presentation.xml" "<p:presentation><p:sldIdLst></p:sldIdLst></p:presentation>"
+                   "ppt/_rels/presentation.xml.rels"
+                   (str "<Relationships>"
+                        "<Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/handoutMaster\" Target=\"handoutMasters/handoutMaster1.xml\"/>"
+                        "</Relationships>")}]
+      (is (true? (parse/handout-master? entries)))))
+  (testing "no handoutMaster relationship at all -- false, the overwhelming common case"
+    (is (false? (parse/handout-master? {}))))
+  (testing "wired into deck"
+    (let [entries {"ppt/presentation.xml" "<p:presentation><p:sldIdLst></p:sldIdLst></p:presentation>"
+                   "ppt/_rels/presentation.xml.rels"
+                   (str "<Relationships>"
+                        "<Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/handoutMaster\" Target=\"handoutMasters/handoutMaster1.xml\"/>"
+                        "</Relationships>")
+                   "ppt/slides/slide1.xml" "<p:sld><p:cSld><p:spTree></p:spTree></p:cSld></p:sld>"}
+          d (parse/deck entries)
+          plain-d (parse/deck {"ppt/slides/slide1.xml" "<p:sld><p:cSld><p:spTree></p:spTree></p:cSld></p:sld>"})]
+      (is (true? (:presentationml/handout-master? d)))
+      (is (not (contains? plain-d :presentationml/handout-master?))))))

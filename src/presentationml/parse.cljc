@@ -481,6 +481,17 @@
               (cond-> {:slide-indices indices}
                 section-name (assoc :name section-name))))))))
 
+(defn handout-master?
+  "Whether the deck has a handout master part at all (Print Handouts'
+  layout, via ppt/presentation.xml's own .rels, relationship type
+  .../handoutMaster). A print-layout template with no meaningful per-deck
+  DATA to extract (unlike notes, which carry actual per-slide text) --
+  this only captures its presence, not any content. false for the
+  overwhelming common case of a deck with no handout master at all."
+  [entries]
+  (boolean (some (fn [{:keys [type]}] (str/ends-with? (or type "") "/handoutMaster"))
+                 (vals (relationships entries "ppt/presentation.xml")))))
+
 (defn deck
   ([entries] (deck entries {}))
   ([entries opts]
@@ -530,6 +541,7 @@
             (when (seq masters) {:presentationml/masters masters})
             (when (seq layouts) {:presentationml/layouts layouts})
             (when-let [s (sections presentation)] {:presentationml/sections s})
+            (when (handout-master? entries) {:presentationml/handout-master? true})
             (doc-properties core app)))))
 
 (defn valid-deck? [deck]
