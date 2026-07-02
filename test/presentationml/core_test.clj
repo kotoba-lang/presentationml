@@ -43,6 +43,32 @@
     (is (= 28.0 (:drawingml/font-size shape)))
     (is (= "ABCDEF" (get-in deck [:presentationml/theme :presentationml/colors :presentationml.color/accent1])))))
 
+(deftest extracts-speaker-notes-from-notes-slide-part
+  (let [entries
+        {"ppt/presentation.xml" "<p:presentation><p:sldSz cx=\"9144000\" cy=\"5143500\"/></p:presentation>"
+         "ppt/slides/slide1.xml"
+         (str "<p:sld><p:cSld><p:spTree>"
+              "<p:sp><p:nvSpPr><p:cNvPr id=\"2\" name=\"Title\"/></p:nvSpPr>"
+              "<p:txBody><a:p><a:r><a:t>Slide with notes</a:t></a:r></a:p></p:txBody></p:sp>"
+              "</p:spTree></p:cSld></p:sld>")
+         "ppt/slides/_rels/slide1.xml.rels"
+         (str "<Relationships>"
+              "<Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/notesSlide\" Target=\"../notesSlides/notesSlide1.xml\"/>"
+              "</Relationships>")
+         "ppt/notesSlides/notesSlide1.xml"
+         (str "<p:notes><p:cSld><p:spTree>"
+              "<p:sp><p:nvSpPr><p:nvPr><p:ph type=\"sldImg\"/></p:nvPr></p:nvSpPr></p:sp>"
+              "<p:sp><p:nvSpPr><p:nvPr><p:ph type=\"body\"/></p:nvPr></p:nvSpPr>"
+              "<p:txBody><a:p><a:r><a:t>Remember to mention Q4 numbers</a:t></a:r></a:p></p:txBody></p:sp>"
+              "</p:spTree></p:cSld></p:notes>")}
+        deck (parse/deck entries)
+        slide (-> deck :presentationml/slides first)]
+    (is (= "Remember to mention Q4 numbers" (:presentationml/notes slide))))
+  (testing "a slide with no notesSlide relationship simply has no :presentationml/notes key"
+    (let [entries {"ppt/slides/slide1.xml" "<p:sld><p:cSld><p:spTree></p:spTree></p:cSld></p:sld>"}
+          deck (parse/deck entries)]
+      (is (not (contains? (-> deck :presentationml/slides first) :presentationml/notes))))))
+
 (deftest inherits-placeholder-geometry-and-scheme-color-from-layout
   (let [entries
         {"ppt/presentation.xml" "<p:presentation><p:sldSz cx=\"9144000\" cy=\"5143500\"/></p:presentation>"

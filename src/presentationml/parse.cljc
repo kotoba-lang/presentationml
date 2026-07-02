@@ -170,6 +170,28 @@
   (or (some :drawingml/text shapes)
       (str "Slide " (inc idx))))
 
+(defn- notes-slide-path
+  "The ppt/notesSlides/notesSlideN.xml part path a slide's speaker notes
+  live in, via the slide's own .rels (relationship type .../notesSlide)."
+  [entries slide-path]
+  (some (fn [{:keys [type target-path]}]
+          (when (and target-path (str/ends-with? (or type "") "/notesSlide"))
+            target-path))
+        (vals (relationships entries slide-path))))
+
+(defn notes-text
+  "A slide's speaker notes text, or nil. The notesSlide part is structurally
+  a small slide of its own (a slide-image placeholder + a body placeholder
+  holding the actual note text), so this reuses dml/shapes rather than a
+  bespoke notes-only parser, and picks out the body placeholder's text."
+  [entries slide-path]
+  (when-let [notes-path (notes-slide-path entries slide-path)]
+    (when-let [notes-xml (entries notes-path)]
+      (some (fn [shape]
+              (when (= "body" (:type (:drawingml/placeholder shape)))
+                (:drawingml/text shape)))
+            (dml/shapes notes-xml)))))
+
 (defn slide
   ([idx path xml] (slide idx path xml {}))
   ([idx path xml opts]
@@ -177,10 +199,11 @@
                                 :rels (:rels opts)
                                 :placeholder-geometry (:placeholder-geometry opts)
                                 :theme-colors (:theme-colors opts)})]
-    {:presentationml/id (str "slide-" (inc idx))
-     :presentationml/title (slide-title shapes idx)
-     :presentationml/source path
-     :presentationml/shapes shapes})))
+    (cond-> {:presentationml/id (str "slide-" (inc idx))
+             :presentationml/title (slide-title shapes idx)
+             :presentationml/source path
+             :presentationml/shapes shapes}
+      (:notes opts) (assoc :presentationml/notes (:notes opts))))))
 
 (defn deck
   ([entries] (deck entries {}))
@@ -196,7 +219,8 @@
                                      (slide idx path (entries path)
                                             {:rels (slide-relationships entries path)
                                              :placeholder-geometry (placeholder-geometry entries path)
-                                             :theme-colors theme-color-map}))
+                                             :theme-colors theme-color-map
+                                             :notes (notes-text entries path)}))
                                    slide-paths))
          title (or (:title opts)
                    (:presentationml/title opts)
