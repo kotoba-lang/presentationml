@@ -346,11 +346,33 @@
                     bg (assoc :presentationml/background bg))))
               distinct-paths)))))
 
+(defn doc-properties
+  "The deck-level metadata fields OOXML carries in docProps/core.xml
+  (Dublin Core author/subject/keywords/category/lastModifiedBy/created/
+  modified) and docProps/app.xml (company/manager) -- previously only
+  dc:title was read anywhere; every other field was silently dropped on
+  import even when the source file had them (e.g. a deck re-exported by
+  this package after an import round-trip would lose its original
+  author/company/timestamps). Each field is present only when the source
+  XML actually has it -- {} for a deck with no extended metadata at all."
+  [core app]
+  (cond-> {}
+    (dml/first-xml-text core "dc:creator") (assoc :presentationml/author (dml/first-xml-text core "dc:creator"))
+    (dml/first-xml-text core "dc:subject") (assoc :presentationml/subject (dml/first-xml-text core "dc:subject"))
+    (dml/first-xml-text core "cp:keywords") (assoc :presentationml/keywords (dml/first-xml-text core "cp:keywords"))
+    (dml/first-xml-text core "cp:category") (assoc :presentationml/category (dml/first-xml-text core "cp:category"))
+    (dml/first-xml-text core "cp:lastModifiedBy") (assoc :presentationml/last-modified-by (dml/first-xml-text core "cp:lastModifiedBy"))
+    (dml/first-xml-text core "dcterms:created") (assoc :presentationml/created (dml/first-xml-text core "dcterms:created"))
+    (dml/first-xml-text core "dcterms:modified") (assoc :presentationml/modified (dml/first-xml-text core "dcterms:modified"))
+    (dml/first-xml-text app "Company") (assoc :presentationml/company (dml/first-xml-text app "Company"))
+    (dml/first-xml-text app "Manager") (assoc :presentationml/manager (dml/first-xml-text app "Manager"))))
+
 (defn deck
   ([entries] (deck entries {}))
   ([entries opts]
    (let [presentation (entries "ppt/presentation.xml")
          core (entries "docProps/core.xml")
+         app (entries "docProps/app.xml")
          size (slide-size presentation)
          theme-xml (entries "ppt/theme/theme1.xml")
          slide-paths (->> (keys entries)
@@ -384,7 +406,8 @@
                                         :presentationml/shapes []}])}
             size
             (when (seq theme) {:presentationml/theme theme})
-            (when (seq masters) {:presentationml/masters masters})))))
+            (when (seq masters) {:presentationml/masters masters})
+            (doc-properties core app)))))
 
 (defn valid-deck? [deck]
   (and (map? deck)

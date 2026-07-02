@@ -43,6 +43,33 @@
     (is (= 28.0 (:drawingml/font-size shape)))
     (is (= "ABCDEF" (get-in deck [:presentationml/theme :presentationml/colors :presentationml.color/accent1])))))
 
+(deftest reads-doc-properties-test
+  (testing "every extended docProps/core.xml + docProps/app.xml field, when present"
+    (is (= {:presentationml/author "Jun Kawasaki" :presentationml/subject "Q3 Review"
+            :presentationml/keywords "quarterly, review" :presentationml/category "Business"
+            :presentationml/last-modified-by "Jun Kawasaki"
+            :presentationml/created "2026-01-01T00:00:00Z" :presentationml/modified "2026-07-02T00:00:00Z"
+            :presentationml/company "GFTD" :presentationml/manager "Someone"}
+           (parse/doc-properties
+            (str "<cp:coreProperties>"
+                 "<dc:creator>Jun Kawasaki</dc:creator><dc:subject>Q3 Review</dc:subject>"
+                 "<cp:keywords>quarterly, review</cp:keywords><cp:category>Business</cp:category>"
+                 "<cp:lastModifiedBy>Jun Kawasaki</cp:lastModifiedBy>"
+                 "<dcterms:created xsi:type=\"dcterms:W3CDTF\">2026-01-01T00:00:00Z</dcterms:created>"
+                 "<dcterms:modified xsi:type=\"dcterms:W3CDTF\">2026-07-02T00:00:00Z</dcterms:modified>"
+                 "</cp:coreProperties>")
+            "<Properties><Company>GFTD</Company><Manager>Someone</Manager></Properties>"))))
+  (testing "no extended fields at all -- {}, not nil"
+    (is (= {} (parse/doc-properties "<cp:coreProperties><dc:title>Plain</dc:title></cp:coreProperties>" nil))))
+  (testing "wired into deck"
+    (let [entries {"docProps/core.xml" "<cp:coreProperties><dc:title>T</dc:title><dc:creator>Author</dc:creator></cp:coreProperties>"
+                   "docProps/app.xml" "<Properties><Company>Acme</Company></Properties>"
+                   "ppt/presentation.xml" "<p:presentation><p:sldSz cx=\"9144000\" cy=\"5143500\"/></p:presentation>"
+                   "ppt/slides/slide1.xml" "<p:sld><p:cSld><p:spTree></p:spTree></p:cSld></p:sld>"}
+          d (parse/deck entries)]
+      (is (= "Author" (:presentationml/author d)))
+      (is (= "Acme" (:presentationml/company d))))))
+
 (deftest reads-slide-transition-test
   (testing "a transition with an effect element, speed, and explicit advance-on-click=false + timed advance"
     (let [sld-xml (str "<p:sld><p:cSld><p:spTree></p:spTree></p:cSld>"
