@@ -69,6 +69,43 @@
           deck (parse/deck entries)]
       (is (not (contains? (-> deck :presentationml/slides first) :presentationml/notes))))))
 
+(deftest resolves-schemeclr-through-a-custom-non-default-clrmap
+  (let [entries
+        {"ppt/presentation.xml" "<p:presentation><p:sldSz cx=\"9144000\" cy=\"5143500\"/></p:presentation>"
+         "ppt/theme/theme1.xml" "<a:theme><a:clrScheme><a:dk1><a:srgbClr val=\"111111\"/></a:dk1><a:lt1><a:srgbClr val=\"EEEEEE\"/></a:lt1><a:dk2><a:srgbClr val=\"222222\"/></a:dk2></a:clrScheme></a:theme>"
+         "ppt/slides/slide1.xml"
+         (str "<p:sld><p:cSld><p:spTree>"
+              "<p:sp><p:spPr></p:spPr>"
+              "<p:txBody><a:p><a:r><a:rPr><a:solidFill><a:schemeClr val=\"tx1\"/></a:solidFill></a:rPr><a:t>Custom clrMap text</a:t></a:r></a:p></p:txBody></p:sp>"
+              "</p:spTree></p:cSld></p:sld>")
+         "ppt/slides/_rels/slide1.xml.rels"
+         (str "<Relationships>"
+              "<Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideLayout\" Target=\"../slideLayouts/slideLayout1.xml\"/>"
+              "</Relationships>")
+         "ppt/slideLayouts/slideLayout1.xml" "<p:sldLayout><p:cSld><p:spTree></p:spTree></p:cSld></p:sldLayout>"
+         "ppt/slideLayouts/_rels/slideLayout1.xml.rels"
+         (str "<Relationships>"
+              "<Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideMaster\" Target=\"../slideMasters/slideMaster1.xml\"/>"
+              "</Relationships>")
+         ;; a NON-default clrMap: tx1 points to dk2 (222222), not the usual dk1 (111111).
+         "ppt/slideMasters/slideMaster1.xml"
+         "<p:sldMaster><p:clrMap bg1=\"lt1\" tx1=\"dk2\" bg2=\"lt1\" tx2=\"dk1\" accent1=\"accent1\" accent2=\"accent2\" accent3=\"accent3\" accent4=\"accent4\" accent5=\"accent5\" accent6=\"accent6\" hlink=\"hlink\" folHlink=\"folHlink\"/></p:sldMaster>"}
+        deck (parse/deck entries)
+        shape (-> deck :presentationml/slides first :presentationml/shapes first)]
+    (is (= "222222" (:drawingml/color shape))
+        "tx1 resolves through the master's OWN clrMap (->dk2), not the OOXML default (->dk1)"))
+  (testing "no <p:clrMap> at all on the master -- falls back to the OOXML default map, unchanged from before"
+    (let [entries
+          {"ppt/theme/theme1.xml" "<a:theme><a:clrScheme><a:dk1><a:srgbClr val=\"111111\"/></a:dk1></a:clrScheme></a:theme>"
+           "ppt/slides/slide1.xml"
+           (str "<p:sld><p:cSld><p:spTree>"
+                "<p:sp><p:spPr></p:spPr>"
+                "<p:txBody><a:p><a:r><a:rPr><a:solidFill><a:schemeClr val=\"tx1\"/></a:solidFill></a:rPr><a:t>Default clrMap text</a:t></a:r></a:p></p:txBody></p:sp>"
+                "</p:spTree></p:cSld></p:sld>")}
+          deck (parse/deck entries)
+          shape (-> deck :presentationml/slides first :presentationml/shapes first)]
+      (is (= "111111" (:drawingml/color shape))))))
+
 (deftest inherits-placeholder-geometry-and-scheme-color-from-layout
   (let [entries
         {"ppt/presentation.xml" "<p:presentation><p:sldSz cx=\"9144000\" cy=\"5143500\"/></p:presentation>"
