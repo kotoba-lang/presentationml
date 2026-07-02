@@ -403,6 +403,37 @@
     (dml/first-xml-text app "Company") (assoc :presentationml/company (dml/first-xml-text app "Company"))
     (dml/first-xml-text app "Manager") (assoc :presentationml/manager (dml/first-xml-text app "Manager"))))
 
+(defn- sld-id-positions
+  "The presentation's own <p:sldIdLst>'s id attributes, as {\"256\" 0,
+  \"257\" 1, ...} (sldId STRING -> 0-based position in the list) --
+  sections reference slides by this same sldId, never by path/rId, so
+  resolving a section's own <p14:sldId>s back to slide positions needs
+  this same document-order mapping."
+  [presentation-xml]
+  (into {} (map-indexed (fn [idx tag] [(dml/xml-attr tag "id") idx]))
+        (re-seq #"<p:sldId\b[^>]*/?>" (or presentation-xml ""))))
+
+(defn sections
+  "The presentation's own slide sections (Insert > Section in PowerPoint's
+  UI -- a common organizational/navigation aid for longer decks), from
+  <p:extLst>'s PowerPoint-2010 <p14:sectionLst> extension, as a vector of
+  {:name ... :slide-indices [...]} (0-based positions within the deck's
+  own slide order, resolved through <p:sldIdLst>'s own id -> position
+  mapping), or nil when the deck has no sections at all (the common
+  case). Previously entirely unhandled -- a sectioned deck always round-
+  tripped losing that organization completely."
+  [presentation-xml]
+  (when-let [section-lst-body (second (re-find #"<p14:sectionLst\b[^>]*>([\s\S]*?)</p14:sectionLst>" (or presentation-xml "")))]
+    (let [positions (sld-id-positions presentation-xml)]
+      (not-empty
+       (vec (for [section-block (dml/xml-elements section-lst-body "p14:section")
+                  :let [open-tag (or (re-find #"<p14:section\b[^>]*>" section-block) "")
+                        section-name (dml/xml-attr open-tag "name")
+                        sld-ids (map second (re-seq #"<p14:sldId\b[^>]*\bid=\"(\d+)\"" section-block))
+                        indices (vec (keep #(get positions %) sld-ids))]]
+              (cond-> {:slide-indices indices}
+                section-name (assoc :name section-name))))))))
+
 (defn deck
   ([entries] (deck entries {}))
   ([entries opts]
@@ -449,6 +480,7 @@
             (when (seq theme) {:presentationml/theme theme})
             (when (seq masters) {:presentationml/masters masters})
             (when (seq layouts) {:presentationml/layouts layouts})
+            (when-let [s (sections presentation)] {:presentationml/sections s})
             (doc-properties core app)))))
 
 (defn valid-deck? [deck]

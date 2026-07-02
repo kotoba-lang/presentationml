@@ -398,3 +398,34 @@
       (is (= "336699" (parse/master-background master-xml nil)))))
   (testing "no <p:bg> at all -- nil"
     (is (nil? (parse/master-background "<p:sldMaster><p:cSld><p:spTree></p:spTree></p:cSld></p:sldMaster>" nil)))))
+
+(deftest sections-test
+  (testing "sldId->position resolution, one section spanning slides 0-1, another just slide 2"
+    (let [presentation-xml
+          (str "<p:presentation><p:sldIdLst>"
+               "<p:sldId id=\"256\" r:id=\"rId2\"/><p:sldId id=\"257\" r:id=\"rId3\"/><p:sldId id=\"258\" r:id=\"rId4\"/>"
+               "</p:sldIdLst><p:sldSz cx=\"9144000\" cy=\"5143500\"/>"
+               "<p:extLst><p:ext uri=\"{521415D9-36F7-43E2-AB2F-B90AF26B5E84}\">"
+               "<p14:sectionLst xmlns:p14=\"http://schemas.microsoft.com/office/powerpoint/2010/main\">"
+               "<p14:section name=\"Intro\" id=\"{AAAAAAAA-0000-0000-0000-000000000001}\">"
+               "<p14:sldIdLst><p14:sldId id=\"256\"/><p14:sldId id=\"257\"/></p14:sldIdLst></p14:section>"
+               "<p14:section name=\"Summary\" id=\"{AAAAAAAA-0000-0000-0000-000000000002}\">"
+               "<p14:sldIdLst><p14:sldId id=\"258\"/></p14:sldIdLst></p14:section>"
+               "</p14:sectionLst></p:ext></p:extLst></p:presentation>")]
+      (is (= [{:name "Intro" :slide-indices [0 1]}
+              {:name "Summary" :slide-indices [2]}]
+             (parse/sections presentation-xml)))))
+  (testing "no <p14:sectionLst> at all -- nil, the overwhelming common case"
+    (is (nil? (parse/sections "<p:presentation><p:sldIdLst><p:sldId id=\"256\" r:id=\"rId2\"/></p:sldIdLst></p:presentation>"))))
+  (testing "wired into deck"
+    (let [entries {"ppt/presentation.xml"
+                   (str "<p:presentation><p:sldIdLst><p:sldId id=\"256\" r:id=\"rId2\"/></p:sldIdLst>"
+                        "<p:sldSz cx=\"9144000\" cy=\"5143500\"/>"
+                        "<p:extLst><p:ext uri=\"{521415D9-36F7-43E2-AB2F-B90AF26B5E84}\">"
+                        "<p14:sectionLst xmlns:p14=\"http://schemas.microsoft.com/office/powerpoint/2010/main\">"
+                        "<p14:section name=\"Only\" id=\"{AAAAAAAA-0000-0000-0000-000000000001}\">"
+                        "<p14:sldIdLst><p14:sldId id=\"256\"/></p14:sldIdLst></p14:section>"
+                        "</p14:sectionLst></p:ext></p:extLst></p:presentation>")
+                   "ppt/slides/slide1.xml" "<p:sld><p:cSld><p:spTree></p:spTree></p:cSld></p:sld>"}
+          d (parse/deck entries)]
+      (is (= [{:name "Only" :slide-indices [0]}] (:presentationml/sections d))))))
