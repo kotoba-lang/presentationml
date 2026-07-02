@@ -300,6 +300,52 @@
                 (:drawingml/text shape)))
             (dml/shapes notes-xml)))))
 
+(defn comment-authors
+  "ppt/commentAuthors.xml's own author list (legacy <p:cmLst> comment
+  format's shared, package-wide author table -- every comment references
+  an author by id, never carrying the name inline), as {authorId-string ->
+  author-name}, or {} when the deck has no commentAuthors part at all."
+  [comment-authors-xml]
+  (into {}
+        (map (fn [tag] [(dml/xml-attr tag "id") (dml/xml-attr tag "name")]))
+        (re-seq #"<p:cmAuthor\b[^>]*/?>" (or comment-authors-xml ""))))
+
+(defn- comments-slide-path
+  "The ppt/comments/commentN.xml part path a slide's own review comments
+  live in, via the slide's own .rels (relationship type .../comments)."
+  [entries slide-path]
+  (some (fn [{:keys [type target-path]}]
+          (when (and target-path (str/ends-with? (or type "") "/comments"))
+            target-path))
+        (vals (relationships entries slide-path))))
+
+(defn slide-comments
+  "A slide's own PowerPoint review comments (legacy <p:cmLst> format --
+  <p:cm authorId=\"...\" dt=\"...\"><p:pos x=\"...\" y=\"...\"/><p:text>...
+  </p:text></p:cm>, via the slide's own .rels), as a vector of {:author
+  ... :text ... :date ...} (plus :x/:y in inches when the comment's own
+  <p:pos> is present), in document order, or nil when the slide has no
+  comments at all (the overwhelming common case). `authors` is
+  comment-authors' id->name map, resolved once per deck and passed in
+  rather than re-read per slide. Previously entirely unhandled --
+  PowerPoint review comments (a natural fit for this package's
+  collaborative-editing focus) always round-tripped losing every comment
+  completely."
+  [entries slide-path authors]
+  (when-let [comments-path (comments-slide-path entries slide-path)]
+    (when-let [comments-xml (entries comments-path)]
+      (not-empty
+       (vec (for [cm-block (dml/xml-elements comments-xml "p:cm")
+                  :let [open-tag (or (re-find #"<p:cm\b[^>]*>" cm-block) "")
+                        author-id (dml/xml-attr open-tag "authorId")
+                        date (dml/xml-attr open-tag "dt")
+                        pos-tag (re-find #"<p:pos\b[^>]*/?>" cm-block)
+                        text (dml/first-xml-text cm-block "p:text")]]
+              (cond-> {:author (get authors author-id) :text text}
+                date (assoc :date date)
+                (dml/xml-attr pos-tag "x") (assoc :x (dml/emu->inch (dml/xml-attr pos-tag "x") 0))
+                (dml/xml-attr pos-tag "y") (assoc :y (dml/emu->inch (dml/xml-attr pos-tag "y") 0)))))))))
+
 (defn transition
   "A slide's own <p:transition> (a sibling of <p:cSld>, not one of its
   descendants -- CT_Slide's own child, timing/advance metadata plus AT MOST
@@ -334,7 +380,8 @@
              :presentationml/source path
              :presentationml/shapes shapes}
       (transition xml) (assoc :presentationml/transition (transition xml))
-      (:notes opts) (assoc :presentationml/notes (:notes opts))))))
+      (:notes opts) (assoc :presentationml/notes (:notes opts))
+      (seq (:comments opts)) (assoc :presentationml/comments (:comments opts))))))
 
 (defn- slide-master-path [entries slide-path]
   (master-path entries (layout-path entries slide-path)))
@@ -449,12 +496,14 @@
          master-ref-by-path (into {} (map (juxt :presentationml/path :presentationml/id)) masters)
          layouts (layouts-info entries slide-paths)
          layout-ref-by-path (into {} (map (juxt :presentationml/path :presentationml/id)) layouts)
+         authors (comment-authors (entries "ppt/commentAuthors.xml"))
          slides (vec (map-indexed (fn [idx path]
                                      (cond-> (slide idx path (entries path)
                                                     {:rels (slide-relationships entries path)
                                                      :placeholder-geometry (placeholder-geometry entries path)
                                                      :theme-colors (theme-color-map-for-slide entries path theme-xml)
-                                                     :notes (notes-text entries path)})
+                                                     :notes (notes-text entries path)
+                                                     :comments (slide-comments entries path authors)})
                                        (seq masters)
                                        (assoc :presentationml/master-ref
                                               (get master-ref-by-path (slide-master-path entries path)))

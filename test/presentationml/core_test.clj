@@ -164,6 +164,39 @@
           deck (parse/deck entries)]
       (is (not (contains? (-> deck :presentationml/slides first) :presentationml/notes))))))
 
+(deftest extracts-review-comments-from-comments-part-test
+  (let [entries
+        {"ppt/presentation.xml" "<p:presentation><p:sldSz cx=\"9144000\" cy=\"5143500\"/></p:presentation>"
+         "ppt/commentAuthors.xml"
+         (str "<p:cmAuthorLst>"
+              "<p:cmAuthor id=\"0\" name=\"Jun Kawasaki\" initials=\"JK\" lastIdx=\"2\" clrIdx=\"0\"/>"
+              "</p:cmAuthorLst>")
+         "ppt/slides/slide1.xml"
+         (str "<p:sld><p:cSld><p:spTree>"
+              "<p:sp><p:nvSpPr><p:cNvPr id=\"2\" name=\"Title\"/></p:nvSpPr>"
+              "<p:txBody><a:p><a:r><a:t>Reviewed slide</a:t></a:r></a:p></p:txBody></p:sp>"
+              "</p:spTree></p:cSld></p:sld>")
+         "ppt/slides/_rels/slide1.xml.rels"
+         (str "<Relationships>"
+              "<Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/comments\" Target=\"../comments/comment1.xml\"/>"
+              "</Relationships>")
+         "ppt/comments/comment1.xml"
+         (str "<p:cmLst>"
+              "<p:cm authorId=\"0\" dt=\"2026-07-02T00:00:00.000\" idx=\"1\">"
+              "<p:pos x=\"914400\" y=\"457200\"/><p:text>Looks good</p:text></p:cm>"
+              "<p:cm authorId=\"0\" dt=\"2026-07-02T00:05:00.000\" idx=\"2\">"
+              "<p:text>Second comment, no position</p:text></p:cm>"
+              "</p:cmLst>")}
+        deck (parse/deck entries)
+        slide (-> deck :presentationml/slides first)]
+    (is (= [{:author "Jun Kawasaki" :text "Looks good" :date "2026-07-02T00:00:00.000" :x 1.0 :y 0.5}
+            {:author "Jun Kawasaki" :text "Second comment, no position" :date "2026-07-02T00:05:00.000"}]
+           (:presentationml/comments slide))))
+  (testing "a slide with no comments relationship simply has no :presentationml/comments key"
+    (let [entries {"ppt/slides/slide1.xml" "<p:sld><p:cSld><p:spTree></p:spTree></p:cSld></p:sld>"}
+          deck (parse/deck entries)]
+      (is (not (contains? (-> deck :presentationml/slides first) :presentationml/comments))))))
+
 (deftest tracks-distinct-masters-and-per-slide-master-ref-for-multi-master-decks
   (let [entries
         {"ppt/presentation.xml" "<p:presentation><p:sldSz cx=\"9144000\" cy=\"5143500\"/></p:presentation>"
