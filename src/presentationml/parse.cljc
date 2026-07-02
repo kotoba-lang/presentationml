@@ -145,6 +145,27 @@
                   (keyword (or (some-> clr-map-tag (dml/xml-attr role)) default-slot))]))
           default-clr-map)))
 
+(def ^:private clr-map-roles
+  ["bg1" "tx1" "bg2" "tx2" "accent1" "accent2" "accent3" "accent4" "accent5" "accent6" "hlink" "folHlink"])
+
+(defn clr-map-override
+  "A part's OWN <p:clrMapOvr><a:overrideClrMapping .../></p:clrMapOvr>, as
+  an alias->theme-slot map (same shape as clr-map-aliases), or nil when it
+  just inherits its parent's clrMap via <a:masterClrMapping/> (the common
+  case -- every slide/layout this package's own writer emits uses that,
+  and most real decks never override per-slide either). A slide/layout
+  that DOES remap colors differently from its master previously always
+  collapsed to the master's mapping regardless."
+  [part-xml]
+  (when-let [ovr-tag (some->> (re-find #"<p:clrMapOvr\b[^>]*>([\s\S]*?)</p:clrMapOvr>" (or part-xml ""))
+                              second
+                              (re-find #"<a:overrideClrMapping\b[^>]*/?>"))]
+    (into {}
+          (keep (fn [role]
+                  (when-let [slot (dml/xml-attr ovr-tag role)]
+                    [(keyword role) (keyword slot)])))
+          clr-map-roles)))
+
 (defn master-background
   "A slideMaster's own background fill: either a literal <p:bg><p:bgPr>
   <a:solidFill>/<a:gradFill>.../<p:bgPr></p:bg> (what this package's OWN
@@ -161,6 +182,18 @@
         (some-> (re-find #"<p:bgRef\b[^>]*>([\s\S]*?)</p:bgRef>" (or bg-block "")) second
                 (dml/first-color theme-colors)))))
 
+(defn- effective-clr-map-aliases
+  "clr-map-aliases (the master's own clrMap), overridden by the LAYOUT's own
+  <p:clrMapOvr> if it has a real one, overridden again by the SLIDE's own
+  <p:clrMapOvr> if IT has a real one -- matching OOXML's actual precedence
+  (slide > layout > master), instead of always collapsing to the master's
+  mapping regardless of what the slide/layout themselves declare."
+  [entries slide-path]
+  (let [layout (layout-path entries slide-path)
+        layout-ovr (some-> layout entries clr-map-override)
+        slide-ovr (some-> slide-path entries clr-map-override)]
+    (merge (clr-map-aliases entries slide-path) layout-ovr slide-ovr)))
+
 (defn theme-color-map-for-slide
   "theme-color-roles (the real :dk1/:lt1/:accent1... theme slots) PLUS the
   slide's effective clrMap aliases (:bg1/:tx1/:bg2/:tx2/...) resolved to
@@ -171,7 +204,7 @@
   bg/tx->dk/lt translation)."
   [entries slide-path theme-xml]
   (let [slots (theme-color-roles theme-xml)
-        aliases (clr-map-aliases entries slide-path)]
+        aliases (effective-clr-map-aliases entries slide-path)]
     (merge slots
            (into {}
                  (keep (fn [[alias slot]]
