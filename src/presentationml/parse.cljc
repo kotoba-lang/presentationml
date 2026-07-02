@@ -1,7 +1,8 @@
 (ns presentationml.parse
   "Small PresentationML package XML to EDN projection helpers."
   (:require [clojure.string :as str]
-            [drawingml.parse :as dml]))
+            [drawingml.parse :as dml]
+            [xml.parse :as xp]))
 
 (def default-width 10.0)
 (def default-height 5.625)
@@ -285,6 +286,28 @@
                 (:drawingml/text shape)))
             (dml/shapes notes-xml)))))
 
+(defn transition
+  "A slide's own <p:transition> (a sibling of <p:cSld>, not one of its
+  descendants -- CT_Slide's own child, timing/advance metadata plus AT MOST
+  one transition-effect element from OOXML's ~40-odd choice group: fade,
+  wipe, push, cover, split, etc.). Rather than hardcoding a case per effect
+  type, the effect element's own tag/attrs are captured verbatim as :type/
+  :attrs -- faithfully round-tripping any of them (including the ones this
+  package doesn't specifically know about) without an exhaustive schema.
+  nil for the overwhelming common case, no <p:transition> at all (no visual
+  transition configured, PowerPoint's default 'none')."
+  [sld-xml]
+  (when-let [transition-xml (re-find #"<p:transition\b[^>]*/>|<p:transition\b[^>]*>[\s\S]*?</p:transition>"
+                                      (or sld-xml ""))]
+    (let [node (xp/parse transition-xml)
+          effect (first (xp/el-elements node))]
+      (cond-> {}
+        (xp/el-attr node "spd") (assoc :speed (xp/el-attr node "spd"))
+        (= "0" (xp/el-attr node "advClick")) (assoc :advance-on-click false)
+        (xp/el-attr node "advTm") (assoc :advance-after-time (parse-long-safe (xp/el-attr node "advTm")))
+        effect (assoc :type (name (xp/el-tag effect)))
+        (and effect (seq (xp/el-attrs effect))) (assoc :attrs (xp/el-attrs effect))))))
+
 (defn slide
   ([idx path xml] (slide idx path xml {}))
   ([idx path xml opts]
@@ -296,6 +319,7 @@
              :presentationml/title (slide-title shapes idx)
              :presentationml/source path
              :presentationml/shapes shapes}
+      (transition xml) (assoc :presentationml/transition (transition xml))
       (:notes opts) (assoc :presentationml/notes (:notes opts))))))
 
 (defn- slide-master-path [entries slide-path]

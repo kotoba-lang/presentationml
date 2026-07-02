@@ -43,6 +43,31 @@
     (is (= 28.0 (:drawingml/font-size shape)))
     (is (= "ABCDEF" (get-in deck [:presentationml/theme :presentationml/colors :presentationml.color/accent1])))))
 
+(deftest reads-slide-transition-test
+  (testing "a transition with an effect element, speed, and explicit advance-on-click=false + timed advance"
+    (let [sld-xml (str "<p:sld><p:cSld><p:spTree></p:spTree></p:cSld>"
+                        "<p:transition spd=\"slow\" advClick=\"0\" advTm=\"3000\"><p:wipe dir=\"l\"/></p:transition>"
+                        "</p:sld>")]
+      (is (= {:speed "slow" :advance-on-click false :advance-after-time 3000
+              :type "wipe" :attrs {"dir" "l"}}
+             (parse/transition sld-xml)))))
+  (testing "a bare self-closing <p:transition/> (no effect element, no attrs) -- an empty map, not nil"
+    (is (= {} (parse/transition "<p:sld><p:cSld></p:cSld><p:transition/></p:sld>"))))
+  (testing "a transition with only timing attrs and no effect child"
+    (is (= {:speed "fast"}
+           (parse/transition "<p:sld><p:cSld></p:cSld><p:transition spd=\"fast\"/></p:sld>"))))
+  (testing "no <p:transition> at all -- nil, the overwhelming common case"
+    (is (nil? (parse/transition "<p:sld><p:cSld><p:spTree></p:spTree></p:cSld></p:sld>"))))
+  (testing "wired into slide -- :presentationml/transition present only when the slide XML has one"
+    (is (= {:type "fade"}
+           (:presentationml/transition
+            (parse/slide 0 "ppt/slides/slide1.xml"
+                         (str "<p:sld><p:cSld><p:spTree></p:spTree></p:cSld>"
+                              "<p:transition><p:fade/></p:transition></p:sld>")))))
+    (is (nil? (:presentationml/transition
+               (parse/slide 0 "ppt/slides/slide1.xml"
+                            "<p:sld><p:cSld><p:spTree></p:spTree></p:cSld></p:sld>"))))))
+
 (deftest extracts-speaker-notes-from-notes-slide-part
   (let [entries
         {"ppt/presentation.xml" "<p:presentation><p:sldSz cx=\"9144000\" cy=\"5143500\"/></p:presentation>"
