@@ -517,6 +517,34 @@
             (cond-> {:content (entries item-path)}
               props-path (assoc :props-content (entries props-path))))))))
 
+(defn- embedded-font-style [font-block style-tag rels]
+  (when-let [rid (dml/xml-attr (or (re-find (re-pattern (str "<p:" style-tag "\\b[^>]*/?>")) font-block) "")
+                               "r:id")]
+    (when-let [target-path (:target-path (get rels rid))]
+      {:rel-id rid :target-path target-path})))
+
+(defn embedded-fonts
+  "Every font declared in presentation.xml's own <p:embeddedFontLst> (an
+  explicit per-file opt-in -- PowerPoint only writes this when the author
+  turns on \"Embed fonts in the file\") -- typeface name + each present
+  style variant's (regular/bold/italic/boldItalic) resolved rel-id and
+  target-path, via presentation.xml's own .rels. Reference-metadata only,
+  same pattern as this package's other embedded-binary references (chart
+  workbooks, images) -- raw font BYTES are out of scope for this XML-text
+  parser. nil when the deck embeds no fonts at all, the overwhelming
+  common case."
+  [entries presentation-xml]
+  (let [rels (relationships entries "ppt/presentation.xml")]
+    (not-empty
+     (vec (for [font-block (dml/xml-elements (or presentation-xml "") "p:embeddedFont")
+                :let [typeface (dml/xml-attr (or (re-find #"<p:font\b[^>]*/?>" font-block) "") "typeface")]
+                :when typeface]
+            (cond-> {:typeface typeface}
+              (embedded-font-style font-block "regular" rels) (assoc :regular (embedded-font-style font-block "regular" rels))
+              (embedded-font-style font-block "bold" rels) (assoc :bold (embedded-font-style font-block "bold" rels))
+              (embedded-font-style font-block "italic" rels) (assoc :italic (embedded-font-style font-block "italic" rels))
+              (embedded-font-style font-block "boldItalic" rels) (assoc :bold-italic (embedded-font-style font-block "boldItalic" rels))))))))
+
 (defn deck
   ([entries] (deck entries {}))
   ([entries opts]
@@ -568,6 +596,7 @@
             (when-let [s (sections presentation)] {:presentationml/sections s})
             (when (handout-master? entries) {:presentationml/handout-master? true})
             (when-let [cxp (custom-xml-parts entries)] {:presentationml/custom-xml-parts cxp})
+            (when-let [ef (embedded-fonts entries presentation)] {:presentationml/embedded-fonts ef})
             (doc-properties core app)))))
 
 (defn valid-deck? [deck]

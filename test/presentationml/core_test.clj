@@ -510,3 +510,29 @@
                    "customXml/item1.xml" "<root>data</root>"}
           d (parse/deck entries)]
       (is (= [{:content "<root>data</root>"}] (:presentationml/custom-xml-parts d))))))
+
+(deftest embedded-fonts-test
+  (let [presentation-xml
+        (str "<p:presentation><p:embeddedFontLst>"
+             "<p:embeddedFont><p:font typeface=\"Calibri\"/>"
+             "<p:regular r:id=\"rId5\"/><p:bold r:id=\"rId6\"/></p:embeddedFont>"
+             "</p:embeddedFontLst></p:presentation>")
+        entries {"ppt/presentation.xml" presentation-xml
+                 "ppt/_rels/presentation.xml.rels"
+                 (str "<Relationships>"
+                      "<Relationship Id=\"rId5\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/font\" Target=\"fonts/font1.fntdata\"/>"
+                      "<Relationship Id=\"rId6\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/font\" Target=\"fonts/font2.fntdata\"/>"
+                      "</Relationships>")}]
+    (testing "typeface + each present style variant's rel-id/target-path, resolved via presentation.xml's own .rels"
+      (is (= [{:typeface "Calibri"
+               :regular {:rel-id "rId5" :target-path "ppt/fonts/font1.fntdata"}
+               :bold {:rel-id "rId6" :target-path "ppt/fonts/font2.fntdata"}}]
+             (parse/embedded-fonts entries presentation-xml))))
+    (testing "wired into deck"
+      (let [d (parse/deck (assoc entries "ppt/slides/slide1.xml" "<p:sld><p:cSld><p:spTree></p:spTree></p:cSld></p:sld>"))]
+        (is (= [{:typeface "Calibri"
+                 :regular {:rel-id "rId5" :target-path "ppt/fonts/font1.fntdata"}
+                 :bold {:rel-id "rId6" :target-path "ppt/fonts/font2.fntdata"}}]
+               (:presentationml/embedded-fonts d))))))
+  (testing "no <p:embeddedFontLst> at all -- nil, the overwhelming common case"
+    (is (nil? (parse/embedded-fonts {} "<p:presentation></p:presentation>")))))
