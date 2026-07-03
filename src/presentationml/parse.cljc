@@ -180,6 +180,18 @@
   (cond-> {:stops (mapv (fn [{:keys [position color]}] [(or position 0) color]) stops)}
     angle (assoc :angle angle)))
 
+(defn- bg-fill
+  "The literal <p:bg>...</p:bg> fill (if any) inside `xml`, whether that's a
+  slideMaster's own or a slide's own -- both use the exact same schema shape
+  (a literal solidFill/gradFill, or a theme-referenced bgRef), so one reader
+  covers both (see master-background/slide-background)."
+  [xml theme-colors]
+  (let [bg-block (some-> (re-find #"<p:bg\b[^>]*>([\s\S]*?)</p:bg>" (or xml "")) second)]
+    (or (some-> bg-block (dml/gradient-fill theme-colors) gradient-fill->background)
+        (some-> bg-block (dml/solid-fill theme-colors))
+        (some-> (re-find #"<p:bgRef\b[^>]*>([\s\S]*?)</p:bgRef>" (or bg-block "")) second
+                (dml/first-color theme-colors)))))
+
 (defn master-background
   "A slideMaster's own background fill: either a literal <p:bg><p:bgPr>
   <a:solidFill>/<a:gradFill>.../<p:bgPr></p:bg> (what this package's OWN
@@ -193,11 +205,20 @@
   a real multi-stop gradient background since before this. nil when the
   master has no <p:bg> at all."
   [master-xml theme-colors]
-  (let [bg-block (some-> (re-find #"<p:bg\b[^>]*>([\s\S]*?)</p:bg>" (or master-xml "")) second)]
-    (or (some-> bg-block (dml/gradient-fill theme-colors) gradient-fill->background)
-        (some-> bg-block (dml/solid-fill theme-colors))
-        (some-> (re-find #"<p:bgRef\b[^>]*>([\s\S]*?)</p:bgRef>" (or bg-block "")) second
-                (dml/first-color theme-colors)))))
+  (bg-fill master-xml theme-colors))
+
+(defn slide-background
+  "A slide's OWN <p:bg> override, same schema shape as master-background --
+  when present, PowerPoint gives it precedence over the slideMaster's own
+  background for THAT one slide (a common real-deck pattern: a
+  differently-colored title/section-divider slide). Previously entirely
+  unhandled -- master-background only ever looked at the slideMaster's own
+  XML, so a slide with its own background override always round-tripped
+  as if it were using the plain master background instead. nil when the
+  slide has no <p:bg> of its own at all, the overwhelming common case
+  (most slides simply inherit the master's background)."
+  [slide-xml theme-colors]
+  (bg-fill slide-xml theme-colors))
 
 (defn- effective-clr-map-aliases
   "clr-map-aliases (the master's own clrMap), overridden by the LAYOUT's own
@@ -383,7 +404,8 @@
              :presentationml/shapes shapes}
       (transition xml) (assoc :presentationml/transition (transition xml))
       (:notes opts) (assoc :presentationml/notes (:notes opts))
-      (seq (:comments opts)) (assoc :presentationml/comments (:comments opts))))))
+      (seq (:comments opts)) (assoc :presentationml/comments (:comments opts))
+      (slide-background xml (:theme-colors opts)) (assoc :presentationml/background (slide-background xml (:theme-colors opts)))))))
 
 (defn- slide-master-path [entries slide-path]
   (master-path entries (layout-path entries slide-path)))
