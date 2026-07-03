@@ -536,3 +536,32 @@
                (:presentationml/embedded-fonts d))))))
   (testing "no <p:embeddedFontLst> at all -- nil, the overwhelming common case"
     (is (nil? (parse/embedded-fonts {} "<p:presentation></p:presentation>")))))
+
+(deftest relationships-captures-target-mode-test
+  (testing "TargetMode is captured when explicitly present (an external hyperlink)"
+    (let [entries {"ppt/slides/_rels/slide1.xml.rels"
+                   (str "<Relationships>"
+                        "<Relationship Id=\"rId3\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink\" Target=\"https://example.com/\" TargetMode=\"External\"/>"
+                        "</Relationships>")}]
+      (is (= "External" (get-in (parse/relationships entries "ppt/slides/slide1.xml") ["rId3" :target-mode])))))
+  (testing "absent TargetMode (an internal same-package relationship, e.g. a slide-jump hyperlink) -- no :target-mode key at all"
+    (let [entries {"ppt/slides/_rels/slide1.xml.rels"
+                   (str "<Relationships>"
+                        "<Relationship Id=\"rId3\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink\" Target=\"slide3.xml\"/>"
+                        "</Relationships>")}]
+      (is (not (contains? (get (parse/relationships entries "ppt/slides/slide1.xml") "rId3") :target-mode)))))
+  (testing "wired end-to-end: an internal slide-jump hyperlink surfaces as :drawingml/hyperlink-slide-part, not :drawingml/hyperlink"
+    (let [entries {"ppt/presentation.xml" "<p:presentation><p:sldIdLst></p:sldIdLst></p:presentation>"
+                   "ppt/slides/slide1.xml"
+                   (str "<p:sld><p:cSld><p:spTree>"
+                        "<p:sp><p:nvSpPr><p:cNvPr id=\"2\" name=\"Link\"/></p:nvSpPr>"
+                        "<p:txBody><a:p><a:r><a:rPr><a:hlinkClick r:id=\"rId3\"/></a:rPr><a:t>Next</a:t></a:r></a:p></p:txBody></p:sp>"
+                        "</p:spTree></p:cSld></p:sld>")
+                   "ppt/slides/_rels/slide1.xml.rels"
+                   (str "<Relationships>"
+                        "<Relationship Id=\"rId3\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink\" Target=\"slide3.xml\"/>"
+                        "</Relationships>")}
+          d (parse/deck entries)
+          shape (-> d :presentationml/slides first :presentationml/shapes first)]
+      (is (= "ppt/slides/slide3.xml" (:drawingml/hyperlink-slide-part shape)))
+      (is (not (contains? shape :drawingml/hyperlink))))))
