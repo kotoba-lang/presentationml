@@ -1,7 +1,7 @@
 {:paths ["src"]
  :deps {io.github.kotoba-lang/drawingml
         {:git/url "https://github.com/kotoba-lang/drawingml.git"
-         :git/sha "f2046351d97657f73067ccfe1242466f81bade66"}
+         :git/sha "c6a304352d3163f25443704036cb90e57a22540b"}
         io.github.kotoba-lang/xml
         {:git/url "https://github.com/kotoba-lang/xml.git"
          :git/sha "568e022a38bea2d97dda2487b930d48d8a61609c"}}
