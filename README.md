@@ -22,6 +22,7 @@ every row lives in `kotoba-lang/slides`.
 | Package plumbing | Slide master / slide layout path + color-map override resolution | ✅ | |
 | Package plumbing | Multiple masters, multiple layouts, per-slide master/layout ref | ✅ | |
 | Background | Master background, incl. multi-stop gradient | ✅ | falls back through gradient → first-stop solid approximation → `bgRef` theme color |
+| Background | Per-slide background override | ✅ | takes precedence over the master's for that one slide; shares the same reader as the master's own background |
 | Slide-level metadata | Title derivation (first text shape, or fallback) | ✅ | |
 | Slide-level metadata | Slide transition | ✅ | |
 | Slide-level metadata | Speaker notes text | ✅ | reused via `notesSlide`'s own shape parsing rather than a bespoke reader |
