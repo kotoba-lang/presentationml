@@ -62,12 +62,14 @@
           (keep (fn [match]
                   (let [tag (if (string? match) match (first match))
                         id (dml/xml-attr tag "Id")
-                        target (dml/xml-attr tag "Target")]
+                        target (dml/xml-attr tag "Target")
+                        target-mode (dml/xml-attr tag "TargetMode")]
                     (when id
                       [id (cond-> {:id id
                                    :type (dml/xml-attr tag "Type")
                                    :target target}
-                            target (assoc :target-path (resolve-target part-path target)))]))))
+                            target (assoc :target-path (resolve-target part-path target))
+                            target-mode (assoc :target-mode target-mode))]))))
           (re-seq #"<Relationship\b[^>]*/?>" (or rels-xml "")))))
 
 (defn- workbook-path [entries chart-part]
