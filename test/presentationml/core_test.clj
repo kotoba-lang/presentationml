@@ -432,6 +432,23 @@
   (testing "no <p:bg> at all -- nil"
     (is (nil? (parse/master-background "<p:sldMaster><p:cSld><p:spTree></p:spTree></p:cSld></p:sldMaster>" nil)))))
 
+(deftest slide-background-override-test
+  (testing "a slide's own <p:bg> uses the exact same schema shape as a master's, resolved the same way"
+    (let [slide-xml "<p:sld><p:cSld><p:bg><p:bgPr><a:solidFill><a:srgbClr val=\"9B1C2E\"/></a:solidFill></p:bgPr></p:bg><p:spTree></p:spTree></p:cSld></p:sld>"]
+      (is (= "9B1C2E" (parse/slide-background slide-xml nil)))))
+  (testing "no <p:bg> on the slide itself -- nil, the overwhelming common case (most slides inherit the master's background)"
+    (is (nil? (parse/slide-background "<p:sld><p:cSld><p:spTree></p:spTree></p:cSld></p:sld>" nil))))
+  (testing "wired into deck as :presentationml/background, distinct from the master's own background"
+    (let [entries {"ppt/presentation.xml" "<p:presentation><p:sldSz cx=\"9144000\" cy=\"5143500\"/></p:presentation>"
+                   "ppt/slides/slide1.xml"
+                   (str "<p:sld><p:cSld><p:bg><p:bgPr><a:solidFill><a:srgbClr val=\"9B1C2E\"/></a:solidFill></p:bgPr></p:bg>"
+                        "<p:spTree></p:spTree></p:cSld></p:sld>")
+                   "ppt/slides/slide2.xml" "<p:sld><p:cSld><p:spTree></p:spTree></p:cSld></p:sld>"}
+          d (parse/deck entries)
+          [s1 s2] (:presentationml/slides d)]
+      (is (= "9B1C2E" (:presentationml/background s1)))
+      (is (not (contains? s2 :presentationml/background))))))
+
 (deftest sections-test
   (testing "sldId->position resolution, one section spanning slides 0-1, another just slide 2"
     (let [presentation-xml
