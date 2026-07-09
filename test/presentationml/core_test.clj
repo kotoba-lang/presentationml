@@ -12,6 +12,21 @@
   (is (str/includes? (pml/relationships-xml []) "<Relationships"))
   (is (str/includes? (pml/content-types-xml 0) "presentation.xml")))
 
+(deftest relationships-xml-escapes-attribute-values
+  (testing "a target containing a literal quote must not inject a new
+            attribute (e.g. TargetMode) -- verified via this repo's own
+            parse/relationships and independently against javax.xml's DOM
+            parser: the unescaped version silently attached a real,
+            unintended TargetMode=\"External\" to a relationship that never
+            set target-mode"
+    (let [evil-target "notes.xml\" TargetMode=\"External"
+          out (pml/relationships-xml [{:id "rId3" :type "hyperlink" :target evil-target}])
+          entries {(parse/rels-path "ppt/slides/slide1.xml") out}
+          rel (get (parse/relationships entries "ppt/slides/slide1.xml") "rId3")]
+      (is (nil? (:target-mode rel)) "no injected TargetMode attribute")
+      (is (str/includes? (:target rel) "TargetMode")
+          "the payload round-trips as literal target data, not as markup"))))
+
 (deftest builds-package-map
   (let [pkg (pml/package-map {:slides [(pml/slide "<p:sp/>")]})]
     (is (contains? pkg "[Content_Types].xml"))
