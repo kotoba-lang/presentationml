@@ -1,6 +1,7 @@
 (ns presentationml.core
   "EDN-first PresentationML package projection."
-  (:require [clojure.string :as str]))
+  (:require [clojure.string :as str]
+            [drawingml.core :as dml]))
 
 (def ns-a "http://schemas.openxmlformats.org/drawingml/2006/main")
 (def ns-p "http://schemas.openxmlformats.org/presentationml/2006/main")
@@ -37,8 +38,18 @@
 (defn relationships-xml [rels]
   (xml-decl
    (str "<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\">"
+        ;; id/type/target were spliced unescaped -- a target containing a
+        ;; literal `"` (e.g. an untrusted hyperlink target) could inject an
+        ;; entirely new attribute (verified: a target ending in
+        ;; `" TargetMode="External"` silently attached a real, unintended
+        ;; TargetMode="External" to the relationship, confirmed both against
+        ;; a real javax.xml DOM parser and this repo's own
+        ;; presentationml.parse/relationships). dml/esc mirrors the
+        ;; escaping drawingml.core already uses correctly for its own
+        ;; attribute values.
         (apply str (for [{:keys [id type target]} rels]
-                     (str "<Relationship Id=\"" id "\" Type=\"" type "\" Target=\"" target "\"/>")))
+                     (str "<Relationship Id=\"" (dml/esc id) "\" Type=\"" (dml/esc type)
+                          "\" Target=\"" (dml/esc target) "\"/>")))
         "</Relationships>")))
 
 (defn content-types-xml [slide-count]
