@@ -1,6 +1,6 @@
 (ns presentationml.core
   "EDN-first PresentationML package projection."
-  (:require [clojure.string :as str]
+  (:require [kotoba.lang.text :as str]
             [drawingml.core :as dml]))
 
 (def ns-a "http://schemas.openxmlformats.org/drawingml/2006/main")
