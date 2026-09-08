@@ -1,6 +1,6 @@
 (ns presentationml.parse
   "Small PresentationML package XML to EDN projection helpers."
-  (:require [clojure.string :as str]
+  (:require [kotoba.lang.text :as str]
             [drawingml.parse :as dml]
             [xml.parse :as xp]))
 
