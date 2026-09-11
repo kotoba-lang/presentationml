@@ -37,5 +37,5 @@ every row lives in `kotoba-lang/slides`.
 ## Test
 
 ```bash
-clojure -M:test
+kbb -M:test
 ```
