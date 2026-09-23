@@ -1,6 +1,6 @@
 (ns presentationml.core-test
   (:require [kotoba.lang.text :as str]
-            [clojure.test :refer [deftest is testing]]
+            [kotoba.test :refer [deftest is testing]]
             [presentationml.core :as pml]
             [presentationml.parse :as parse]))
 
